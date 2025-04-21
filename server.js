@@ -211,7 +211,7 @@ io.on('connection', (socket) => {
             console.warn(`[Start Game Error] Попытка начать игру в ${roomCode}, которая не в состоянии ожидания (state: ${room.state}).`);
             return;
         }
-        const MIN_PLAYERS = 1; // Минимум игроков для старта (можно 1 для теста, или 2 для реальной игры)
+        const MIN_PLAYERS = 2; // Минимум игроков для старта (можно 1 для теста, или 2 для реальной игры)
         if (room.players.length < MIN_PLAYERS) {
             socket.emit('errorMessage', `Need at least ${MIN_PLAYERS} player(s) to start.`);
             console.log(`[Start Game Info] Попытка начать игру в ${roomCode} с ${room.players.length} игроками.`);
