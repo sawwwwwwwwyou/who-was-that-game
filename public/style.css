@@ -95,8 +95,8 @@ h3 { font-size: 1.3em; }
     margin-top: 0;
     min-width: 180px;
 }
-#joinRoomBtn { background-color: #4a71e0; } /* Синий */
-#createRoomBtn { background-color: #6c757d; } /* Серый */
+#joinRoomBtn { background-color: #28a745; } /* Синий */
+#createRoomBtn { background-color: #007bff; } /* !!! МЕНЯЕМ НА ГОЛУБОЙ (тот же, что у Next/Return) !!! */
 
 .separator { color: #888; margin: 25px 0; font-weight: 600; width: 100%; text-align: center; position: relative; }
 .separator::before, .separator::after { content: ''; position: absolute; top: 50%; width: 35%; height: 1px; background-color: #555; }
@@ -126,7 +126,18 @@ h3 { font-size: 1.3em; }
     background-color: #3a3d45; color: #e4e6eb; width: 100%;
 }
 #modalNameInput::placeholder { color: #777; }
-
+/* Кнопки в модальных окнах (цвет + ширина) */
+#modalConfirmBtn, #modalCancelBtn, #gameOverReturnBtn, #infoModalCloseBtn { /* Добавили #infoModalCloseBtn */
+    /* Наследуем .pill-button */
+    width: 90%;
+    max-width: 300px;
+    margin-left: auto;
+    margin-right: auto;
+}
+#modalConfirmBtn { background-color: #28a745; margin-top: 0; } /* Зеленая */
+#modalCancelBtn { background-color: #dc3545; } /* Красная */
+#gameOverReturnBtn { background-color: #007bff; } /* Синяя */
+#infoModalCloseBtn { background-color: #6c757d; } /* Серая кнопка OK */
 /* Кнопки в модальных окнах (цвет + ширина) */
 #modalConfirmBtn, #modalCancelBtn, #gameOverReturnBtn {
     width: 90%;

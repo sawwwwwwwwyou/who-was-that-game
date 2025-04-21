@@ -31,8 +31,11 @@ const modalNameInput = document.getElementById('modalNameInput');
 const modalConfirmBtn = document.getElementById('modalConfirmBtn');
 const modalCancelBtn = document.getElementById('modalCancelBtn');
 // ... (другие элементы)
-// Элементы модального окна Game Over
-// ... (другие элементы)
+// Элементы модального окна Info
+const infoModal = document.getElementById('infoModal');
+const infoModalTitle = document.getElementById('infoModalTitle');
+const infoModalMessage = document.getElementById('infoModalMessage');
+const infoModalCloseBtn = document.getElementById('infoModalCloseBtn');
 const questionNumberDisplay = document.getElementById('questionNumberDisplay');
 const gameOverModal = document.getElementById('gameOverModal');
 const gameOverMessage = document.getElementById('gameOverMessage');
@@ -56,6 +59,16 @@ function showScreen(screenToShow) {
     if (screenToShow) {
         screenToShow.style.display = 'flex';
     }
+}
+// --- Функции Модального окна Info ---
+function openInfoModal(title, message) {
+    infoModalTitle.textContent = title || "Notification"; // Устанавливаем заголовок
+    infoModalMessage.textContent = message || "";        // Устанавливаем сообщение
+    infoModal.style.display = 'flex';                  // Показываем окно
+}
+
+function closeInfoModal() {
+    infoModal.style.display = 'none'; // Скрываем окно
 }
 
 // --- Функции Модального окна ---
@@ -85,7 +98,17 @@ function closeNameModal() {
 }
 
 // --- Обработчики событий Экрана Входа ---
+// Нажатие кнопки "OK" в модалке Info
+infoModalCloseBtn.addEventListener('click', () => {
+    closeInfoModal();
+});
 
+// Закрытие модалки Info при клике на темный фон (overlay)
+infoModal.addEventListener('click', (event) => {
+    if (event.target === infoModal) {
+        closeInfoModal();
+    }
+});
 // (с) Проверка поля ввода кода комнаты
 roomCodeInput.addEventListener('input', () => {
     // Приводим к верхнему регистру и обрезаем до 4 символов
@@ -182,17 +205,28 @@ socket.on('connect', () => { console.log('Connected:', socket.id); });
 
 socket.on('disconnect', () => {
     console.log('Disconnected');
-    alert('Connection lost.');
-    showScreen(entryScreen); // Возврат на главный экран
+    // alert('Connection lost.'); // <<-- УДАЛЯЕМ ИЛИ КОММЕНТИРУЕМ ЭТО
+    openInfoModal("Connection Lost", "Connection to the server was lost. Please refresh or try again."); // <<< ДОБАВЛЯЕМ ЭТО
+
+    // Сброс состояния (оставляем как было)
+    showScreen(entryScreen);
     amIHost = false;
     if (timerInterval) clearInterval(timerInterval);
+    // ... (остальные сбросы из предыдущих шагов)
+    roomCodeInput.value = '';
+    joinRoomBtn.disabled = true;
+    modalNameInput.value = '';
+    modalConfirmBtn.disabled = true;
+    playerList.innerHTML = '';
+    roomCodeDisplay.textContent = '';
 });
 
 socket.on('connect_error', (err) => { console.error('Connection Error:', err); });
 
 socket.on('errorMessage', (message) => {
     console.error('Server Error:', message);
-    alert(message);
+    // alert(message); // <<-- УДАЛЯЕМ ИЛИ КОММЕНТИРУЕМ ЭТО
+    openInfoModal("Error", message); // <<< ДОБАВЛЯЕМ ЭТО
 });
 
 socket.on('roomJoined', (data) => {
@@ -269,8 +303,10 @@ socket.on('showResults', (data) => {
 socket.on('youAreHostNow', () => {
     console.log("Became new host!");
     amIHost = true;
-    alert('You are the new host!');
-    // Обновляем кнопки в зависимости от текущего экрана
+    // alert('You are the new host!'); // <<-- УДАЛЯЕМ ИЛИ КОММЕНТИРУЕМ ЭТО
+    openInfoModal("Host Status", "You are the new host!"); // <<< ДОБАВЛЯЕМ ЭТО
+
+    // Обновляем кнопки в зависимости от текущего экрана (оставляем как было)
     if (waitingRoomScreen.style.display === 'flex') {
         startGameBtn.style.display = 'block';
     } else if (resultsScreen.style.display === 'flex') {
