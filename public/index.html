@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- (a) Меняем title -->
+    <title>Who Was That?</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- (a) Меняем главный заголовок -->
+    <h1>Who Was That?</h1>
+
+    <!-- Экран входа (перестраиваем) -->
+    <div id="entryScreen">
+        <!-- (с) Элементы для присоединения -->
+        <label for="roomCodeInput" class="input-label">ROOM NUMBER</label>
+        <input type="text" id="roomCodeInput" placeholder="Enter 4 letters" maxlength="4">
+        <button id="joinRoomBtn" disabled>JOIN GAME</button> <!-- Изначально неактивна -->
+
+        <!-- Разделитель или просто отступ -->
+        <div class="separator">OR</div>
+
+        <!-- (г) Кнопка создания -->
+        <button id="createRoomBtn">CREATE ROOM</button>
+    </div>
+
+    <!-- Экран ожидания (оставляем как есть) -->
+    <div id="waitingRoomScreen" style="display: none;">
+        <h2>Room <span id="roomCodeDisplay"></span></h2>
+        <h3>Players:</h3>
+        <ul id="playerList"></ul>
+        <button id="startGameBtn" style="display: none;">Start Game</button>
+    </div>
+
+    <!-- Экран вопроса (оставляем как есть, с прошлого шага) -->
+        <!-- Экран вопроса (будет скрыт изначально) -->
+        <div id="questionScreen" style="display: none;">
+            <!-- Добавляем элемент для номера вопроса -->
+            <div id="questionNumberDisplay" class="question-number">#?</div>
+    
+            <h2 id="questionText">Текст вопроса здесь</h2>
+            <p id="timerText">Time left: <span id="timerDisplay">10</span></p> <!-- Добавим ID к параграфу таймера -->
+            <div id="voteButtonsContainer">
+                <button id="voteYesBtn" class="pill-button">YES</button> <!-- Добавим класс для единообразия -->
+                <button id="voteNoBtn" class="pill-button">NO</button>  <!-- Добавим класс для единообразия -->
+            </div>
+        </div>
+
+    <!-- Экран результатов (оставляем как есть) -->
+    <div id="resultsScreen" style="display: none;">
+        <h2>Results</h2>
+        <p class="question-reminder"></p> <!-- Убедимся, что этот элемент есть -->
+        <p id="resultsText">YES: 0, NO: 0</p>
+        <button id="nextQuestionBtn" style="display: none;">Next Question</button>
+    </div>
+
+    <!-- (с, г) Модальное окно для ввода имени -->
+    <div id="nameModal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <h3 id="modalTitle">Enter Your Name</h3>
+            <input type="text" id="modalNameInput" placeholder="Your name here">
+            <button id="modalConfirmBtn" disabled>Confirm</button> <!-- Изначально неактивна -->
+            <button id="modalCancelBtn">Cancel</button> <!-- Кнопка отмены -->
+        </div>
+    </div>
+
+     <!-- Модальное окно Game Over -->
+     <div id="gameOverModal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <h3>Game Over!</h3>
+            <p id="gameOverMessage">The game has ended.</p> <!-- Сюда будем вставлять сообщение -->
+            <button id="gameOverReturnBtn">Return to Main Menu</button>
+        </div>
+    </div>
+
+    <!-- Подключения скриптов (остаются здесь) -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="client.js"></script>
+</body>
+</html>

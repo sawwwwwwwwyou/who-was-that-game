@@ -1,0 +1,233 @@
+/* --- Глобальные стили и Сброс --- */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    background-color: #1c1e21;
+    color: #e4e6eb;
+    line-height: 1.5;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+}
+
+h1 {
+    color: #ffffff;
+    text-align: center;
+    margin-bottom: 30px;
+    font-size: 2.5em;
+}
+
+/* --- Базовые стили для ВСЕХ кнопок --- */
+button {
+    font-size: 1.1em;
+    font-weight: 600;
+    padding: 14px 30px;
+    margin-top: 10px;
+    margin-bottom: 10px;
+    border: none;
+    border-radius: 50px; /* !!! ПИЛЮЛЯ ДЛЯ ВСЕХ !!! */
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.1s ease, filter 0.2s ease;
+    text-align: center;
+    display: inline-block;
+    width: auto; /* Ширина по контенту по умолчанию */
+    min-width: 150px;
+}
+button:hover:not(:disabled) {
+    filter: brightness(1.15);
+}
+button:active:not(:disabled) {
+    transform: scale(0.97);
+    filter: brightness(1);
+}
+button:disabled {
+    background-color: #555 !important;
+    color: #888 !important;
+    cursor: not-allowed;
+    transform: none;
+    filter: brightness(0.8);
+}
+
+/* --- Стилизация Контейнеров Экранов --- */
+#entryScreen,
+#waitingRoomScreen,
+#questionScreen,
+#resultsScreen {
+    background-color: #2a2d35;
+    max-width: 550px;
+    width: 100%;
+    margin: 10px auto;
+    padding: 35px 30px;
+    border-radius: 16px; /* Контейнеры остаются со скругленными углами */
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* --- Заголовки внутри блоков --- */
+h2, h3 { color: #ffffff; text-align: center; margin-bottom: 25px; }
+h2 { font-size: 1.6em; }
+h3 { font-size: 1.3em; }
+
+/* --- ЭКРАН ВХОДА --- */
+.input-label { font-size: 0.9em; color: #aaa; margin-bottom: 5px; text-transform: uppercase; font-weight: 600; }
+#roomCodeInput {
+    font-size: 1.2em; padding: 12px 15px; margin-bottom: 20px;
+    border: 1px solid #444;
+    border-radius: 8px; /* !!! Поле ввода - НЕ пилюля !!! */
+    background-color: #3a3d45; color: #e4e6eb; width: 90%;
+    max-width: 280px; text-align: center; text-transform: uppercase;
+}
+#roomCodeInput::placeholder { color: #777; }
+
+/* Конкретные стили для кнопок входа (цвет + ширина) */
+#joinRoomBtn, #createRoomBtn {
+    margin-top: 0;
+    min-width: 180px;
+}
+#joinRoomBtn { background-color: #4a71e0; } /* Синий */
+#createRoomBtn { background-color: #6c757d; } /* Серый */
+
+.separator { color: #888; margin: 25px 0; font-weight: 600; width: 100%; text-align: center; position: relative; }
+.separator::before, .separator::after { content: ''; position: absolute; top: 50%; width: 35%; height: 1px; background-color: #555; }
+.separator::before { left: 10px; }
+.separator::after { right: 10px; }
+
+
+/* --- Стили для Модальных Окон (Общие) --- */
+.modal-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background-color: rgba(0, 0, 0, 0.75); display: flex;
+    justify-content: center; align-items: center; z-index: 1000; padding: 15px;
+}
+.modal-content {
+    background-color: #2a2d35; padding: 35px 30px; border-radius: 16px;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.4); width: 100%;
+    max-width: 480px; display: flex; flex-direction: column; align-items: center;
+}
+.modal-content h3 { margin-bottom: 25px; font-size: 1.4em; }
+.modal-content p { margin-bottom: 25px; text-align: center; color: #ccc; font-size: 1.1em;}
+
+/* Поле ввода в модалке Имени */
+#modalNameInput {
+    font-size: 1.1em; padding: 12px 15px; margin-bottom: 25px;
+    border: 1px solid #444;
+    border-radius: 8px; /* !!! Поле ввода - НЕ пилюля !!! */
+    background-color: #3a3d45; color: #e4e6eb; width: 100%;
+}
+#modalNameInput::placeholder { color: #777; }
+
+/* Кнопки в модальных окнах (цвет + ширина) */
+#modalConfirmBtn, #modalCancelBtn, #gameOverReturnBtn {
+    width: 90%;
+    max-width: 300px;
+    margin-left: auto;
+    margin-right: auto;
+}
+#modalConfirmBtn { background-color: #28a745; margin-top: 0; } /* Зеленая */
+#modalCancelBtn { background-color: #dc3545; } /* Красная */
+#gameOverReturnBtn { background-color: #007bff; } /* Синяя */
+
+
+/* --- Стили Экрана Ожидания --- */
+#waitingRoomScreen h3 { margin-top: 25px; margin-bottom: 15px; font-size: 1.3em; }
+#playerList { list-style: none; padding: 0; width: 90%; max-width: 380px; text-align: center; }
+#playerList li { background-color: #3a3d45; padding: 12px 18px; border-radius: 8px; margin-bottom: 10px; font-size: 1.1em; } /* Список игроков - НЕ пилюли */
+#roomCodeDisplay { font-weight: bold; font-size: 1.2em; color: #f0a05a; background-color: #3a3d45; padding: 5px 12px; border-radius: 6px; display: inline-block; margin-bottom: 15px;} /* Код комнаты - НЕ пилюля */
+#startGameBtn { /* Зеленая пилюля */
+    background-color: #28a745;
+    margin-top: 30px;
+    min-width: 180px;
+}
+/* Стили для номера вопроса */
+.question-number {
+    font-size: 1.8em; /* Крупный */
+    font-weight: bold;
+    color: #777; /* Приглушенный серый */
+    margin-bottom: 10px; /* Отступ до текста вопроса */
+    text-align: center; /* Центрируем */
+}
+/* --- Стили Экрана Вопроса --- */
+/* --- Стили Экрана Вопроса --- */
+/* ... (стили #questionScreen #questionText и #timerText (бывший p)) ... */
+#questionScreen #questionText { font-size: 1.6em; font-weight: 600; margin-bottom: 20px; text-align: center;}
+#questionScreen #timerText { /* Используем ID */
+    color: #aaa; margin-bottom: 30px; font-size: 1.2em; font-weight: bold; text-align: center;
+}
+#voteButtonsContainer { display: flex; justify-content: center; gap: 20px; width: 100%; flex-wrap: wrap; }
+
+/* Используем базовый стиль пилюли */
+#voteYesBtn, #voteNoBtn {
+    /* Наследуем .pill-button (убедимся что класс добавлен в HTML или стили скопированы) */
+    min-width: 140px;
+    font-size: 1.2em;
+    padding: 16px 40px;
+    /* Убираем общий background-color отсюда */
+}
+
+/* Цвета для YES/NO */
+#voteYesBtn {
+    background-color: #28a745; /* Зеленый */
+}
+#voteYesBtn:hover:not(:disabled) {
+    background-color: #218838; /* Темнее зеленый */
+    filter: none; /* Убираем filter: brightness, т.к. есть явный hover цвет */
+}
+
+#voteNoBtn {
+    background-color: #dc3545; /* Красный */
+}
+ #voteNoBtn:hover:not(:disabled) {
+    background-color: #c82333; /* Темнее красный */
+    filter: none; /* Убираем filter: brightness */
+}
+
+/* Важно: Стили для :disabled должны перебивать цветные! */
+#voteYesBtn:disabled, #voteNoBtn:disabled {
+    background-color: #555 !important;
+    color: #888 !important;
+    cursor: not-allowed;
+    transform: none;
+    filter: brightness(0.8);
+}
+/* Опциональные цвета для ДА/НЕТ */
+/* #voteYesBtn { background-color: #28a745; } */
+/* #voteNoBtn { background-color: #dc3545; } */
+
+
+/* --- Стили Экрана Результатов --- */
+#resultsScreen .question-reminder { font-size: 1em; color: #bbb; margin-bottom: 20px; font-style: italic; text-align: center;}
+#resultsText { font-size: 2em; font-weight: bold; margin-bottom: 30px; color: #ffffff; text-align: center;}
+#nextQuestionBtn { /* Синяя пилюля */
+    background-color: #007bff;
+    min-width: 180px;
+}
+
+
+/* --- Адаптивность --- */
+@media (max-width: 480px) {
+    body { padding: 5px; }
+    h1 { font-size: 1.8em; margin-bottom: 20px;}
+    h2 { font-size: 1.3em; }
+    h3 { font-size: 1.1em; }
+    button { /* Пилюли поменьше на маленьких экранах */
+         padding: 12px 25px; font-size: 1em; min-width: 120px;
+    }
+    #voteYesBtn, #voteNoBtn { /* Кнопки голосования */
+        padding: 14px 30px; font-size: 1.1em; min-width: 110px;
+    }
+    #entryScreen, #waitingRoomScreen, #questionScreen, #resultsScreen, .modal-content { padding: 25px 20px; }
+    #questionScreen #questionText { font-size: 1.3em; }
+    #resultsText { font-size: 1.6em; }
+    .separator::before, .separator::after { width: 30%; }
+}
