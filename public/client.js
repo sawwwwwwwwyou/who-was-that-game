@@ -73,14 +73,16 @@ function closeInfoModal() {
 
 // --- Функции Модального окна ---
 function openNameModal(actionType) {
-    currentAction = actionType; // Запоминаем, зачем открыли ('join' или 'create')
-    modalNameInput.value = ''; // Очищаем поле имени
-    modalConfirmBtn.disabled = true; // Кнопка подтверждения неактивна
+    console.log('Вызвана функция openNameModal, тип:', actionType); // <-- Добавь лог для проверки вызова
+    currentAction = actionType;
+    modalNameInput.value = '';
+    modalConfirmBtn.disabled = true;
     modalTitle.textContent = (actionType === 'join') ? 'Enter Your Name to Join' : 'Enter Your Name to Create';
     modalConfirmBtn.textContent = (actionType === 'join') ? 'JOIN' : 'CREATE';
 
-    nameModal.style.display = 'flex'; // Показываем модалку (она flex оверлей)
-    modalNameInput.focus(); // Ставим фокус в поле ввода имени
+    nameModal.style.display = 'flex'; // Показываем модалку
+    modalNameInput.focus();
+    console.log('Модальное окно имени должно быть видимо.'); // <-- Добавь лог
 }
 // --- Функции Модального окна Game Over ---
 function openGameOverModal(message) {
@@ -123,20 +125,21 @@ roomCodeInput.addEventListener('input', () => {
 
 // Нажатие кнопки JOIN GAME
 joinRoomBtn.addEventListener('click', () => {
-    currentRoomCode = roomCodeInput.value.trim().toUpperCase(); // Получаем код сразу
+    // Очищаем старые данные перед новой попыткой входа
+    try { localStorage.removeItem('whoWasThat_playerId'); localStorage.removeItem('whoWasThat_roomCode'); } catch(e){}
+
+    currentRoomCode = roomCodeInput.value.trim().toUpperCase();
     if (currentRoomCode.length === 4) {
-        console.log(`Проверка существования комнаты: ${currentRoomCode}`);
-        // Отправляем событие на сервер для проверки
+        console.log(`Checking room existence: ${currentRoomCode}`);
         socket.emit('checkRoomExists', { roomCode: currentRoomCode });
-        // НЕ открываем модалку здесь, ждем ответа 'roomExists'
-    } else {
-        // На всякий случай, хотя кнопка должна быть неактивна
-        alert('Room code must be 4 letters.');
-    }
+    } // else ... alert - можно убрать, т.к. кнопка неактивна
 });
 
-// (г) Нажатие кнопки CREATE ROOM -> Открывает модалку
+// Нажатие кнопки CREATE ROOM -> Открывает модалку
 createRoomBtn.addEventListener('click', () => {
+     // Очищаем старые данные перед новой попыткой входа
+     try { localStorage.removeItem('whoWasThat_playerId'); localStorage.removeItem('whoWasThat_roomCode'); } catch(e){}
+
     openNameModal('create');
 });
 
@@ -201,7 +204,25 @@ function submitVote(vote) {
 
 // --- Обработка событий от Сервера ---
 
-socket.on('connect', () => { console.log('Connected:', socket.id); });
+let isFirstConnect = true;
+
+socket.on('connect', () => {
+    console.log('Successfully connected! Socket ID:', socket.id);
+
+    // Важно: isFirstConnect здесь означает первый connect ПОСЛЕ ЗАГРУЗКИ СКРИПТА.
+    if (!isFirstConnect) {
+        // Это реконнект ПОСЛЕ ОБРЫВА СВЯЗИ, а не первая загрузка.
+        console.log('Reconnect detected AFTER initial connection. Attempting rejoin...');
+        attemptRejoin(); // Пытаемся восстановить сессию, если предыдущая попытка не удалась или связь снова рвалась
+    } else {
+        console.log('First connection established after script load.');
+         // При первом коннекте attemptRejoin УЖЕ была вызвана при инициализации.
+         // Если там были данные, rejoinAttempt УЖЕ отправлен (или будет отправлен как только сокет подключится).
+         // Если данных не было, entryScreen УЖЕ показан.
+         // Поэтому здесь НИЧЕГО ДЕЛАТЬ НЕ НУЖНО.
+    }
+    isFirstConnect = false;
+});
 
 socket.on('disconnect', () => {
     console.log('Disconnected');
@@ -230,19 +251,37 @@ socket.on('errorMessage', (message) => {
 });
 
 socket.on('roomJoined', (data) => {
-    console.log('Joined room:', data.roomCode);
+    console.log('Joined room:', data.roomCode, 'My PlayerID:', data.playerId); // Логируем playerId
+
+    // --- СОХРАНЕНИЕ ДАННЫХ В LOCALSTORAGE ---
+    try {
+        localStorage.setItem('whoWasThat_playerId', data.playerId);
+        localStorage.setItem('whoWasThat_roomCode', data.roomCode);
+        console.log('PlayerId и RoomCode сохранены в localStorage.');
+    } catch (e) {
+        console.error('Ошибка сохранения в localStorage:', e);
+        // Показываем ошибку пользователю, т.к. реконнект не будет работать
+        openInfoModal("Storage Error", "Could not save session data. Reconnect may not work.");
+    }
+    // --- КОНЕЦ СОХРАНЕНИЯ ---
+
     roomCodeDisplay.textContent = data.roomCode;
-    updatePlayerList(data.players);
+    updatePlayerList(data.players); // Обновляем список (может понадобиться playerId позже)
     amIHost = data.isHost;
     startGameBtn.style.display = amIHost ? 'block' : 'none';
-    nextQuestionBtn.style.display = 'none'; // Всегда скрыта при входе
+    nextQuestionBtn.style.display = 'none';
+
+    // Скрываем модалку "Reconnecting...", если она была показана
+    closeInfoModal(); // Используем нашу универсальную модалку
+
     showScreen(waitingRoomScreen); // Показываем экран ожидания
 });
 
 // Сервер подтвердил, что комната существует - открываем модалку имени
+
 socket.on('roomExists', () => {
-    console.log('Server confirmed room exists, opening name modal.');
-    openNameModal('join'); // Теперь открываем модалку здесь
+    console.log('Server confirmed room exists, opening name modal.'); // <-- ДОЛЖЕН ПОЯВИТЬСЯ В КОНСОЛИ КЛИЕНТА
+    openNameModal('join'); // <<< САМОЕ ВАЖНОЕ: эта строка должна вызваться
 });
 
 socket.on('updatePlayerList', (players) => {
@@ -300,61 +339,184 @@ socket.on('showResults', (data) => {
     if (timerInterval) clearInterval(timerInterval);
 });
 
-socket.on('youAreHostNow', () => {
-    console.log("Became new host!");
-    amIHost = true;
-    // alert('You are the new host!'); // <<-- УДАЛЯЕМ ИЛИ КОММЕНТИРУЕМ ЭТО
-    openInfoModal("Host Status", "You are the new host!"); // <<< ДОБАВЛЯЕМ ЭТО
+    socket.on('youAreHostNow', () => {
+        console.log("[Host Status] Event received: You are the new host!");
+        amIHost = true; // Обновляем флаг
+        openInfoModal("Host Status", "You are the new host!"); // Показываем уведомление
 
-    // Обновляем кнопки в зависимости от текущего экрана (оставляем как было)
-    if (waitingRoomScreen.style.display === 'flex') {
-        startGameBtn.style.display = 'block';
-    } else if (resultsScreen.style.display === 'flex') {
-        nextQuestionBtn.style.display = 'block';
-    }
-});
+        // Проверяем, на каком экране мы СЕЙЧАС, и показываем нужную кнопку
+        if (waitingRoomScreen.style.display === 'flex') {
+            // Если мы в лобби - показываем Start Game
+            console.log("[Host Status] Currently on waiting screen, showing Start Game button.");
+            startGameBtn.style.display = 'block';
+            nextQuestionBtn.style.display = 'none'; // Убедимся, что Next скрыта
+        } else if (resultsScreen.style.display === 'flex') {
+            // --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+            // Если мы на экране результатов - показываем Next Question
+            console.log("[Host Status] Currently on results screen, showing Next Question button.");
+            nextQuestionBtn.style.display = 'block';
+            startGameBtn.style.display = 'none'; // Убедимся, что Start скрыта
+            // --- КОНЕЦ ИЗМЕНЕНИЯ ---
+        } else {
+            // Если мы на другом экране (вопрос или вход) - кнопки хоста пока не нужны
+            console.log("[Host Status] Currently on question/entry screen, host buttons remain hidden for now.");
+            startGameBtn.style.display = 'none';
+            nextQuestionBtn.style.display = 'none';
+        }
+    });
 
-socket.on('gameOver', (data) => {
-    console.log('Game Over:', data.message);
-    if (timerInterval) clearInterval(timerInterval); // Останавливаем таймер
+// Сервер подтвердил успешный реконнект
+socket.on('rejoinSuccess', (data) => {
+    /* Ожидаемый формат data: См. предыдущие комментарии */
+    console.log('[Rejoin Success] Rejoin successful! Received game state:', data);
 
-    openGameOverModal(data.message); // Открываем модалку
+    // Показываем короткое уведомление об успехе
+    openInfoModal("Reconnected!", "Successfully rejoined the game.");
+    setTimeout(closeInfoModal, 1500); // Закрыть через 1.5 сек
 
-    // --- Усиленный сброс состояния клиента ---
-    amIHost = false;            // Сбрасываем статус хоста
-    currentAction = null;       // Сбрасываем текущее действие модалки
-    currentRoomCode = '';       // Сбрасываем код комнаты
+    // Восстанавливаем состояние клиента
+    amIHost = data.isHost;
+    currentRoomCode = data.roomCode;
+    roomCodeDisplay.textContent = data.roomCode;
+    updatePlayerList(data.players);
 
-    // Явно скрываем кнопки, которые не должны быть видны на главном экране
+    // Сбрасываем кнопки, которые не должны быть видны по умолчанию
     startGameBtn.style.display = 'none';
     nextQuestionBtn.style.display = 'none';
 
-    // Очищаем поля ввода и дизейблим кнопку Join
-    roomCodeInput.value = '';
-    joinRoomBtn.disabled = true;
-    // Можно также очистить поле имени в модалке на всякий случай
-    modalNameInput.value = '';
-    modalConfirmBtn.disabled = true;
+    // Отображаем правильный экран и данные игры на основе gameState
+    const gameState = data.gameState;
+    if (gameState.state === 'waiting') {
+        console.log('[Rejoin Success] Game state is WAITING.');
+        startGameBtn.style.display = amIHost ? 'block' : 'none';
+        voteYesBtn.disabled = false; // Разблокируем кнопки
+        voteNoBtn.disabled = false;
+        showScreen(waitingRoomScreen);
+    } else if (gameState.state === 'question') {
+         console.log('[Rejoin Success] Game state is QUESTION.');
+         startGameBtn.style.display = 'none';
+         nextQuestionBtn.style.display = 'none';
 
-    // Очищаем список игроков на экране ожидания (на случай если пользователь вернется туда)
-    playerList.innerHTML = '';
-    roomCodeDisplay.textContent = '';
+        questionNumberDisplay.textContent = `#${gameState.questionNumber || '?'}`;
+        questionText.textContent = gameState.questionText || 'Loading question...';
+        startTimer(gameState.durationLeft || VOTE_DURATION_SECONDS);
 
-    // !!! Важно: НЕ вызываем showScreen(entryScreen) здесь,
-    // т.к. пользователь должен сначала закрыть модалку gameOverModal.
-    // Переход на entryScreen теперь происходит при нажатии gameOverReturnBtn.
+        // --- ДОБАВЛЕНИЕ: Явный лог и проверка myVote ---
+        const myVote = gameState.myVote; // Получаем голос из состояния
+        console.log('[Rejoin Success] Получено состояние ГОЛОСА (myVote):', myVote, `(Тип: ${typeof myVote})`); // <<< ЛОГ ДАННЫХ С СЕРВЕРА
+        voteYesBtn.disabled = (myVote !== null); // Блокируем, если не null
+        voteNoBtn.disabled = (myVote !== null);  // Блокируем, если не null
+         if(myVote !== null) { console.log('[Rejoin Success] Кнопки голосования ОТКЛЮЧЕНЫ (т.к. myVote не null).'); }
+         else { console.log('[Rejoin Success] Кнопки голосования ВКЛЮЧЕНЫ (т.к. myVote равен null).'); }
+        // --- КОНЕЦ ДОБАВЛЕНИЯ ---
+
+        showScreen(questionScreen);
+    } else if (gameState.state === 'results') {
+        console.log('[Rejoin Success] Game state is RESULTS.');
+        startGameBtn.style.display = 'none';
+        voteYesBtn.disabled = true; // Блокируем кнопки
+        voteNoBtn.disabled = true;
+
+        const yesVotes = gameState.results ? gameState.results.yesVotes : 0;
+        const noVotes = gameState.results ? gameState.results.noVotes : 0;
+        resultsText.textContent = `YES: ${yesVotes}, NO: ${noVotes}`;
+        const questionReminder = resultsScreen.querySelector('.question-reminder');
+        if (questionReminder) {
+            questionReminder.textContent = `Question #${gameState.questionNumber || '?'}: ${gameState.questionText || ''}`;
+        }
+        nextQuestionBtn.style.display = amIHost ? 'block' : 'none';
+        showScreen(resultsScreen);
+        if (timerInterval) clearInterval(timerInterval);
+    } else {
+        console.error("[Rejoin Success] Unknown or finished game state received:", gameState.state);
+         try { localStorage.removeItem('whoWasThat_playerId'); localStorage.removeItem('whoWasThat_roomCode'); } catch(e){}
+         voteYesBtn.disabled = false;
+         voteNoBtn.disabled = false;
+         showScreen(entryScreen);
+    }
 });
 
-// Дополняем обработчик кнопки в модалке Game Over
-gameOverReturnBtn.addEventListener('click', () => {
-    closeGameOverModal(); // Закрываем модалку
-    showScreen(entryScreen); // !! Вот теперь показываем главный экран !!
+// Сервер отклонил попытку реконнекта
+socket.on('rejoinFailed', (data) => {
+    /* Ожидаемый формат data:
+       { message: "Причина отказа" }
+    */
+    console.warn('Rejoin failed:', data.message);
+
+    // Показываем ошибку пользователю
+    openInfoModal("Reconnection Failed", data.message);
+    // Не закрываем автоматически, пользователь нажмет OK
+
+    // Очищаем сохраненные данные, чтобы не пытаться снова
+    try {
+        localStorage.removeItem('whoWasThat_playerId');
+        localStorage.removeItem('whoWasThat_roomCode');
+    } catch (e) { console.error("Ошибка очистки localStorage:", e); }
+
+    // После закрытия модалки ошибки (по кнопке ОК) покажем главный экран
+    // Мы не можем сделать это прямо здесь, т.к. окно открыто.
+    // Пользователь сам нажмет ОК и окажется на главном экране (т.к. другие экраны скрыты).
+    // Убедимся, что другие экраны скрыты:
+     showScreen(null); // Скрыть все игровые экраны
+     entryScreen.style.display = 'flex'; // Показать только экран входа под модалкой
+
 });
-// Нажатие кнопки "Return to Main Menu" в модалке Game Over
-gameOverReturnBtn.addEventListener('click', () => {
-    closeGameOverModal(); // Закрываем модалку
-    showScreen(entryScreen); // Показываем главный экран
-});
+
+    // --- Сервер сообщил, что игра окончена ---
+    socket.on('gameOver', (data) => {
+        console.log('[Game Over Event] Игра окончена:', data.message);
+
+        // Останавливаем клиентский таймер, если он был активен
+        if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null; // Сбрасываем ссылку на таймер
+            console.log('[Game Over Event] Клиентский таймер остановлен.');
+        }
+
+        // Открываем модальное окно Game Over с сообщением от сервера
+        openGameOverModal(data.message || "The game has ended.");
+
+        // --- ОЧИСТКА LOCALSTORAGE ПРИ КОНЦЕ ИГРЫ ---
+        try {
+            localStorage.removeItem('whoWasThat_playerId');
+            localStorage.removeItem('whoWasThat_roomCode');
+            console.log('[Game Over Event] Данные сессии удалены из localStorage.');
+        } catch (e) {
+            console.error("[Game Over Event] Ошибка очистки localStorage:", e);
+        }
+        // --- КОНЕЦ ОЧИСТКИ ---
+
+        // Сбрасываем состояние клиента
+        amIHost = false;
+        currentAction = null;
+        currentRoomCode = '';
+
+        // Явно скрываем кнопки, которые видны только в игре/лобби
+        startGameBtn.style.display = 'none';
+        nextQuestionBtn.style.display = 'none';
+        voteYesBtn.disabled = false; // Сброс кнопок голосования на всякий случай
+        voteNoBtn.disabled = false;
+
+
+        // Сбрасываем состояние элементов ввода на главном экране
+        roomCodeInput.value = '';
+        joinRoomBtn.disabled = true;
+        modalNameInput.value = '';
+        modalConfirmBtn.disabled = true;
+
+        // Очищаем элементы предыдущей игры
+        playerList.innerHTML = '';
+        roomCodeDisplay.textContent = '';
+        questionNumberDisplay.textContent = '#?';
+        questionText.textContent = '';
+        resultsText.textContent = 'YES: 0, NO: 0';
+        const questionReminder = resultsScreen.querySelector('.question-reminder');
+        if (questionReminder) questionReminder.textContent = '';
+
+
+        // Не переключаем экран здесь, ждем нажатия кнопки в модалке gameOverModal
+        // showScreen(entryScreen); // <<< ЭТО НЕПРАВИЛЬНО ЗДЕСЬ
+    });
 
 
 // --- Вспомогательные функции ---
@@ -373,6 +535,42 @@ function updatePlayerList(players) {
     });
 }
 
+// Функция для отправки попытки переподключения
+function attemptRejoin() {
+    try {
+        const storedPlayerId = localStorage.getItem('whoWasThat_playerId');
+        const storedRoomCode = localStorage.getItem('whoWasThat_roomCode');
+
+        if (storedPlayerId && storedRoomCode) {
+            console.log(`Found session data in localStorage. Attempting rejoin: playerId=${storedPlayerId}, roomCode=${storedRoomCode}`);
+            // Показываем "Reconnecting..." ТОЛЬКО если сокет УЖЕ подключен
+            // Если сокет еще не подключен (первая загрузка), пользователь просто увидит пустой экран или экран входа позже.
+            // Можно добавить проверку socket.connected
+            if (socket.connected) { // Проверяем, есть ли уже соединение
+                 openInfoModal("Reconnecting...", `Attempting to rejoin room ${storedRoomCode}...`);
+            } else {
+                console.log("Socket not connected yet, waiting for 'connect' event after rejoin attempt.");
+                // Можно показать какой-то общий лоадер на весь экран, но пока оставим так.
+            }
+
+
+            // Отправляем событие на сервер СРАЗУ ЖЕ (не ждем connect)
+            // Если сокет еще не подключен, событие будет отправлено сразу после установки соединения.
+            socket.emit('rejoinAttempt', {
+                playerId: storedPlayerId,
+                roomCode: storedRoomCode
+            });
+        } else {
+            console.log('No session data found in localStorage. Showing entry screen.');
+            // Если данных НЕТ, показываем экран входа
+            showScreen(entryScreen); // <<< ПОКАЗЫВАЕМ ЭКРАН ВХОДА ЗДЕСЬ
+        }
+    } catch (e) {
+        console.error('Error reading from localStorage during rejoin attempt:', e);
+        showScreen(entryScreen); // При ошибке тоже показываем экран входа
+    }
+}
+
 function startTimer(duration) {
     let timeLeft = duration;
     timerDisplay.textContent = timeLeft;
@@ -389,4 +587,4 @@ function startTimer(duration) {
 }
 
 // --- Инициализация ---
-showScreen(entryScreen); // Начинаем с экрана входа
+attemptRejoin(); // <<< ВОЗВРАЩАЕМ ЭТО: Пытаемся переподключиться при загрузке

@@ -1,7 +1,7 @@
 {
   "name": "whoisit",
   "version": "1.0.0",
-  "main": "server.js", 
+  "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -11,10 +11,11 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "express": "^5.1.0", 
-    "socket.io": "^4.8.1" 
-  }, 
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1",
+    "uuid": "^11.1.0"
+  },
   "engines": {
-    "node": "22.x" 
-  } 
+    "node": "22.x"
+  }
 }
