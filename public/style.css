@@ -160,6 +160,31 @@ h3 { font-size: 1.3em; }
     margin-top: 30px;
     min-width: 180px;
 }
+
+#playerList li {
+    background-color: #3a3d45;
+    padding: 12px 18px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    font-size: 1.1em;
+    transition: background-color 0.2s, color 0.2s; /* Плавные переходы */
+}
+
+#playerList li.my-name { /* Стиль для своего имени */
+    background-color: #4a71e0; /* Темно-синий фон */
+    color: #fff; /* Белый текст */
+    font-style: italic; /* Оставляем курсив */
+    font-weight: bold; /* Можно сделать жирным */
+}
+
+#playerList li.host-name { /* Стиль для хоста (можно добавить иконку или рамку) */
+   /* Например, добавим легкую рамку */
+   /* border: 1px solid #f0a05a; */
+   /* Или просто сделаем текст жирнее */
+   font-weight: bold;
+   /* Текст "(Host)" уже добавляется в JS */
+}
+
 /* Стили для номера вопроса */
 .question-number {
     font-size: 1.8em; /* Крупный */
@@ -183,6 +208,7 @@ h3 { font-size: 1.3em; }
     min-width: 140px;
     font-size: 1.2em;
     padding: 16px 40px;
+    transition: background-color 0.2s ease, transform 0.1s ease, filter 0.2s ease, opacity 0.3s; /* Добавим opacity */
     /* Убираем общий background-color отсюда */
 }
 
@@ -202,6 +228,27 @@ h3 { font-size: 1.3em; }
     background-color: #c82333; /* Темнее красный */
     filter: none; /* Убираем filter: brightness */
 }
+
+#voteYesBtn:disabled, #voteNoBtn:disabled {
+    background-color: #555 !important;
+    color: #888 !important;
+    cursor: not-allowed;
+    transform: none;
+    filter: brightness(0.8);
+    opacity: 0.6; /* Делаем невыбранные неактивные тусклее */
+}
+
+    #voteYesBtn:disabled.selected-vote,
+    #voteNoBtn:disabled.selected-vote {
+        background-color: #212529 !important; /* <<< ЗАМЕНА: Очень темный серый */
+        color: #CCCCCC !important;           /* <<< ЗАМЕНА: Очень светлый серый текст для контраста */
+        opacity: 1;                          /* Оставляем непрозрачным */
+        transform: none;                     /* Убираем эффекты */
+        filter: none;
+        cursor: not-allowed;                 /* Курсор неактивности */
+        /* Убираем тень, если она была, т.к. фон темный */
+        box-shadow: none;
+    }
 
 /* Важно: Стили для :disabled должны перебивать цветные! */
 #voteYesBtn:disabled, #voteNoBtn:disabled {
@@ -225,6 +272,67 @@ h3 { font-size: 1.3em; }
 }
 
 
+#confirmExitBtn { background-color: #dc3545; } /* Красный (Подтвердить выход) */
+#cancelExitBtn { background-color: #6c757d; } /* Серый (Остаться) */
+/* Стиль кнопки выхода по умолчанию (в лобби) */
+.exit-button {
+    background-color: #ffc107;
+    color: #212529;
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: auto;
+    min-width: 120px;
+    z-index: 50;
+    transition: opacity 0.3s ease, background-color 0.2s ease; /* Добавляем transition для opacity */
+    opacity: 1; /* По умолчанию непрозрачная */
+}
+.exit-button:hover:not(:disabled) {
+    background-color: #e0a800;
+    filter: none;
+    opacity: 1; /* При наведении делаем непрозрачной */
+}
+
+/* Стиль кнопки выхода ВО ВРЕМЯ ИГРЫ (когда у body есть класс in-game-active) */
+body.in-game-active .exit-button {
+    opacity: 0.5; /* <<< Делаем полупрозрачной */
+}
+
+/* При наведении на полупрозрачную кнопку - делаем ее снова непрозрачной */
+body.in-game-active .exit-button:hover:not(:disabled) {
+    opacity: 1;
+}
+/* Стиль кнопки выхода */
+.exit-button {
+    background-color: #ffc107; /* Предупреждающий желтый/оранжевый цвет */
+    color: #212529; /* Темный текст для контраста */
+    position: fixed; /* Позиционируем относительно окна браузера */
+    bottom: 20px;    /* Отступ снизу */
+    right: 20px;     /* Отступ справа */
+    width: auto;     /* Ширина по контенту */
+    min-width: 120px;
+    z-index: 50; /* Ниже модалок, но выше основного контента */
+}
+.exit-button:hover:not(:disabled) {
+    background-color: #e0a800;
+    filter: none; /* Убираем стандартный brightness */
+}
+/* Стиль для инфо-панели комнаты */
+.room-info {
+    position: fixed; /* Или absolute, если нужно внутри другого контейнера */
+    top: 15px;
+    right: 20px;
+    background-color: rgba(42, 45, 53, 0.8); /* Полупрозрачный фон */
+    color: #ccc;
+    padding: 5px 15px;
+    border-radius: 8px;
+    font-size: 0.85em;
+    z-index: 40; /* Ниже кнопки Exit и модалок */
+    opacity: 0.8; /* Полупрозрачность */
+}
+.room-info span { /* Стиль для текста внутри */
+    margin: 0 5px;
+}
 /* --- Адаптивность --- */
 @media (max-width: 480px) {
     body { padding: 5px; }

@@ -10,6 +10,11 @@
 <body>
     <!-- (a) Меняем главный заголовок -->
     <h1>Who Was That?</h1>
+    
+    <div id="roomInfoDisplay" class="room-info" style="display: none;">
+        <span id="roomInfoCode">Room: ????</span> |
+        <span id="roomInfoPlayers">Players: </span>
+    </div>
 
     <!-- Экран входа (перестраиваем) -->
     <div id="entryScreen">
@@ -55,6 +60,9 @@
         <button id="nextQuestionBtn" style="display: none;">Next Question</button>
     </div>
 
+<!-- Кнопка выхода из комнаты (изначально скрыта) -->
+    <button id="exitRoomBtn" class="pill-button exit-button" style="display: none;">Exit Room</button>
+
     <!-- (с, г) Модальное окно для ввода имени -->
     <div id="nameModal" class="modal-overlay" style="display: none;">
         <div class="modal-content">
@@ -62,6 +70,16 @@
             <input type="text" id="modalNameInput" placeholder="Your name here">
             <button id="modalConfirmBtn" disabled>Confirm</button> <!-- Изначально неактивна -->
             <button id="modalCancelBtn">Cancel</button> <!-- Кнопка отмены -->
+        </div>
+    </div>
+    
+     <!-- НОВОЕ: Модальное окно подтверждения выхода -->
+    <div id="confirmExitModal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <h3>Confirm Exit</h3>
+            <p>Are you sure you want to leave the current room?</p>
+            <button id="confirmExitBtn" class="pill-button">Yes, Leave</button>
+            <button id="cancelExitBtn" class="pill-button">No, Stay</button>
         </div>
     </div>
 

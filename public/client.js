@@ -40,24 +40,98 @@ const questionNumberDisplay = document.getElementById('questionNumberDisplay');
 const gameOverModal = document.getElementById('gameOverModal');
 const gameOverMessage = document.getElementById('gameOverMessage');
 const gameOverReturnBtn = document.getElementById('gameOverReturnBtn');
-
+// ... (другие элементы)
+const roomInfoDisplay = document.getElementById('roomInfoDisplay');
+const roomInfoCode = document.getElementById('roomInfoCode');
+const roomInfoPlayers = document.getElementById('roomInfoPlayers');
+// Элементы выхода
+const exitRoomBtn = document.getElementById('exitRoomBtn');
+const confirmExitModal = document.getElementById('confirmExitModal');
+const confirmExitBtn = document.getElementById('confirmExitBtn');
+const cancelExitBtn = document.getElementById('cancelExitBtn');
 // --- Глобальные переменные ---
 let amIHost = false;
+let currentHostId = null;
 let timerInterval = null;
 let currentAction = null; // 'join' или 'create' - для модального окна
 let currentRoomCode = ''; // Сохраняем код комнаты при открытии модалки Join
 
 // --- Функции для переключения экранов ---
+// --- Функции для переключения экранов ---
 function showScreen(screenToShow) {
-    document.querySelector('h1').textContent = 'Who Was That?';
-    entryScreen.style.display = 'none';
-    entryScreen.style.display = 'none';
-    waitingRoomScreen.style.display = 'none';
-    questionScreen.style.display = 'none';
-    resultsScreen.style.display = 'none';
-    // Убедимся, что экраны - flex контейнеры (если они не display: none)
-    if (screenToShow) {
-        screenToShow.style.display = 'flex';
+    // Возвращаем главный заголовок по умолчанию (если нужно)
+    // document.querySelector('h1').textContent = 'Who Was That?';
+
+    // Сначала скрываем ВСЕ основные контейнеры экранов
+    // Убедимся, что переменные экранов существуют перед доступом к style
+    if (entryScreen) entryScreen.style.display = 'none';
+    if (waitingRoomScreen) waitingRoomScreen.style.display = 'none';
+    if (questionScreen) questionScreen.style.display = 'none';
+    if (resultsScreen) resultsScreen.style.display = 'none';
+
+    // Показываем ТОЛЬКО нужный экран (если он передан и существует)
+    if (screenToShow && typeof screenToShow.style !== 'undefined') {
+        screenToShow.style.display = 'flex'; // Используем flex для центрирования
+    }
+
+    // Определяем, является ли текущий экран игровым (вопрос или результаты)
+    // Добавляем проверки на существование переменных на всякий случай
+    const isGameScreenActive = screenToShow && (screenToShow === questionScreen || screenToShow === resultsScreen);
+
+    // --- УПРАВЛЕНИЕ КНОПКОЙ ВЫХОДА ---
+    // Проверяем существование кнопки перед доступом к style
+    if (exitRoomBtn) {
+        // Показываем кнопку, если текущий экран - ожидание, вопрос или результаты
+        if (screenToShow === waitingRoomScreen || isGameScreenActive) {
+            exitRoomBtn.style.display = 'inline-block'; // Или 'block'
+        } else {
+            exitRoomBtn.style.display = 'none'; // Скрываем на остальных экранах
+        }
+    } else {
+        console.warn("[showScreen] Кнопка exitRoomBtn не найдена в DOM.");
+    }
+
+    // --- УПРАВЛЕНИЕ КЛАССОМ ДЛЯ ПРОЗРАЧНОСТИ КНОПКИ ВЫХОДА ---
+    // Проверяем существование document.body перед доступом к classList
+    if (document.body) {
+        if (isGameScreenActive) {
+            // Добавляем класс к body, если идет игра (вопрос/результаты)
+            document.body.classList.add('in-game-active');
+            // console.log('[showScreen] Добавлен класс in-game-active к body'); // Лог для отладки
+        } else {
+            // Убираем класс, если мы не на экране вопроса/результатов
+            document.body.classList.remove('in-game-active');
+            // console.log('[showScreen] Удален класс in-game-active с body'); // Лог для отладки
+        }
+    } else {
+         console.warn("[showScreen] document.body не найден.");
+    }
+
+
+    // --- УПРАВЛЕНИЕ ИНФО-ПАНЕЛЬЮ ---
+    // Проверяем существование панели и ее дочерних элементов
+    if (roomInfoDisplay && roomInfoCode && roomInfoPlayers) {
+        if (isGameScreenActive) {
+             // Показываем и обновляем на экранах вопроса и результатов
+            roomInfoDisplay.style.display = 'block'; // Или 'inline-block', 'flex' в зависимости от верстки
+            roomInfoCode.textContent = `Room: ${currentRoomCode || '????'}`; // Используем сохраненный currentRoomCode
+
+            // Обновляем список игроков (можно сделать отдельную функцию)
+            try {
+                 // Получаем список имен игроков из текущего playerList (простой способ)
+                 const playerNames = Array.from(playerList.children).map(li => li.textContent.replace(/\s\(You,?\s?Host?\)$/, '')).join(', '); // Убираем (You) и (Host)
+                 roomInfoPlayers.textContent = `Players: ${playerNames || '...'}`;
+            } catch(e) {
+                 console.error("Ошибка при обновлении списка игроков в инфо-панели:", e);
+                 roomInfoPlayers.textContent = 'Players: Error';
+            }
+
+        } else {
+            // Скрываем на остальных экранах
+            roomInfoDisplay.style.display = 'none';
+        }
+    } else {
+        console.warn("[showScreen] Элементы инфо-панели (roomInfoDisplay, roomInfoCode, roomInfoPlayers) не найдены.");
     }
 }
 // --- Функции Модального окна Info ---
@@ -65,6 +139,15 @@ function openInfoModal(title, message) {
     infoModalTitle.textContent = title || "Notification"; // Устанавливаем заголовок
     infoModalMessage.textContent = message || "";        // Устанавливаем сообщение
     infoModal.style.display = 'flex';                  // Показываем окно
+}
+
+// --- Функции Модального окна Confirm Exit ---
+function openConfirmExitModal() {
+    confirmExitModal.style.display = 'flex';
+}
+
+function closeConfirmExitModal() {
+    confirmExitModal.style.display = 'none';
 }
 
 function closeInfoModal() {
@@ -103,6 +186,21 @@ function closeNameModal() {
 // Нажатие кнопки "OK" в модалке Info
 infoModalCloseBtn.addEventListener('click', () => {
     closeInfoModal();
+});
+// Нажатие кнопки "Return to Main Menu" в модалке Game Over
+gameOverReturnBtn.addEventListener('click', () => {
+    console.log('Return to Main Menu button clicked.'); // Лог для проверки
+    closeGameOverModal(); // Закрываем модалку Game Over
+    showScreen(entryScreen); // Показываем главный экран входа
+});
+
+// Опционально: Закрытие gameOverModal при клике на фон
+gameOverModal.addEventListener('click', (event) => {
+    if (event.target === gameOverModal) {
+        console.log('Clicked on gameOverModal overlay.'); // Лог
+        closeGameOverModal();
+        showScreen(entryScreen); // Тоже показываем главный экран
+    }
 });
 
 // Закрытие модалки Info при клике на темный фон (overlay)
@@ -189,6 +287,68 @@ startGameBtn.addEventListener('click', () => {
     socket.emit('startGame');
 });
 
+// --- ОБРАБОТЧИКИ КНОПОК ВЫХОДА ---
+
+// Нажатие кнопки "Exit Room" -> Открывает модалку подтверждения
+exitRoomBtn.addEventListener('click', () => {
+    openConfirmExitModal();
+});
+
+// Нажатие "No, Stay" в модалке подтверждения
+cancelExitBtn.addEventListener('click', () => {
+    closeConfirmExitModal();
+});
+
+// Нажатие "Yes, Leave" в модалке подтверждения
+confirmExitBtn.addEventListener('click', () => {
+    console.log('User confirmed exit. Emitting leaveRoom event.');
+    socket.emit('leaveRoom'); // Отправляем событие на сервер
+
+    // Очищаем данные сессии немедленно на клиенте
+    try {
+        localStorage.removeItem('whoWasThat_playerId');
+        localStorage.removeItem('whoWasThat_roomCode');
+        console.log('Session data cleared from localStorage on explicit leave.');
+    } catch (e) { console.error("Error clearing localStorage on leave:", e); }
+
+    // Сбрасываем состояние клиента
+    amIHost = false;
+    currentAction = null;
+    currentRoomCode = '';
+    if (timerInterval) { // Останавливаем таймер, если был
+         clearInterval(timerInterval);
+         timerInterval = null;
+    }
+    // Сбрасываем кнопки и поля (можно вынести в отдельную функцию resetClientState)
+    roomCodeInput.value = '';
+    joinRoomBtn.disabled = true;
+    modalNameInput.value = '';
+    modalConfirmBtn.disabled = true;
+    startGameBtn.style.display = 'none';
+    nextQuestionBtn.style.display = 'none';
+    voteYesBtn.disabled = false;
+    voteNoBtn.disabled = false;
+    playerList.innerHTML = '';
+    roomCodeDisplay.textContent = '';
+    questionNumberDisplay.textContent = '#?';
+    questionText.textContent = '';
+    resultsText.textContent = 'YES: 0, NO: 0';
+    const questionReminder = resultsScreen.querySelector('.question-reminder');
+    if (questionReminder) questionReminder.textContent = '';
+
+
+    closeConfirmExitModal(); // Закрываем модалку подтверждения
+    showScreen(entryScreen); // Показываем экран входа
+});
+
+ // Закрытие модалки Confirm Exit при клике на темный фон (overlay)
+confirmExitModal.addEventListener('click', (event) => {
+    if (event.target === confirmExitModal) { // Закрываем только по клику на сам фон
+        closeConfirmExitModal();
+    }
+});
+// --- КОНЕЦ ОБРАБОТЧИКОВ ВЫХОДА ---
+
 voteYesBtn.addEventListener('click', () => { submitVote('yes'); });
 voteNoBtn.addEventListener('click', () => { submitVote('no'); });
 nextQuestionBtn.addEventListener('click', () => {
@@ -197,9 +357,23 @@ nextQuestionBtn.addEventListener('click', () => {
 });
 
 function submitVote(vote) {
+    console.log(`Submitting vote: ${vote}`);
     socket.emit('submitVote', { vote });
+
+    // Блокируем обе кнопки
     voteYesBtn.disabled = true;
     voteNoBtn.disabled = true;
+
+    // Удаляем класс selected-vote с обеих кнопок (на всякий случай)
+    voteYesBtn.classList.remove('selected-vote');
+    voteNoBtn.classList.remove('selected-vote');
+
+    // Добавляем класс selected-vote к НАЖАТОЙ кнопке
+    if (vote === 'yes') {
+        voteYesBtn.classList.add('selected-vote');
+    } else if (vote === 'no') {
+        voteNoBtn.classList.add('selected-vote');
+    }
 }
 
 // --- Обработка событий от Сервера ---
@@ -251,28 +425,31 @@ socket.on('errorMessage', (message) => {
 });
 
 socket.on('roomJoined', (data) => {
-    console.log('Joined room:', data.roomCode, 'My PlayerID:', data.playerId); // Логируем playerId
+    console.log('Joined room:', data.roomCode, 'My PlayerID:', data.playerId, 'HostID:', data.hostId);
 
-    // --- СОХРАНЕНИЕ ДАННЫХ В LOCALSTORAGE ---
+    // Сохраняем данные в localStorage
     try {
         localStorage.setItem('whoWasThat_playerId', data.playerId);
         localStorage.setItem('whoWasThat_roomCode', data.roomCode);
         console.log('PlayerId и RoomCode сохранены в localStorage.');
     } catch (e) {
         console.error('Ошибка сохранения в localStorage:', e);
-        // Показываем ошибку пользователю, т.к. реконнект не будет работать
         openInfoModal("Storage Error", "Could not save session data. Reconnect may not work.");
     }
-    // --- КОНЕЦ СОХРАНЕНИЯ ---
 
-    roomCodeDisplay.textContent = data.roomCode;
-    updatePlayerList(data.players); // Обновляем список (может понадобиться playerId позже)
+    // Обновляем глобальные переменные
+    currentRoomCode = data.roomCode; // Сохраняем код комнаты
     amIHost = data.isHost;
+    currentHostId = data.hostId; // <<< СОХРАНЯЕМ ID ХОСТА
+
+    // Обновляем UI
+    roomCodeDisplay.textContent = data.roomCode;
+    updatePlayerListUI(data.players); // <<< ВЫЗЫВАЕМ ОБНОВЛЕННУЮ ФУНКЦИЮ ОТРИСОВКИ
     startGameBtn.style.display = amIHost ? 'block' : 'none';
     nextQuestionBtn.style.display = 'none';
 
     // Скрываем модалку "Reconnecting...", если она была показана
-    closeInfoModal(); // Используем нашу универсальную модалку
+    closeInfoModal();
 
     showScreen(waitingRoomScreen); // Показываем экран ожидания
 });
@@ -284,15 +461,34 @@ socket.on('roomExists', () => {
     openNameModal('join'); // <<< САМОЕ ВАЖНОЕ: эта строка должна вызваться
 });
 
-socket.on('updatePlayerList', (players) => {
-    console.log('Player list update:', players);
-    updatePlayerList(players);
-     // Обновляем видимость кнопки Start Game, если мы хост (на случай, если игрок вышел/вошел)
-    if (waitingRoomScreen.style.display === 'flex' && amIHost) {
-       startGameBtn.style.display = 'block';
+socket.on('updatePlayerList', (data) => {
+    /*
+      Ожидаем от сервера объект data:
+      {
+        players: [ { id: 'socket_id_1', name: 'Имя1', playerId: 'uuid1' }, ... ],
+        hostId: 'socket_id_хоста'
+      }
+    */
+    console.log('[Update Player List] Получен обновленный список:', data);
+    if (!data || !data.players) {
+        console.error("[Update Player List] Некорректные данные получены от сервера.");
+        return;
+    }
+
+    currentHostId = data.hostId; // Сохраняем/обновляем актуальный ID хоста
+
+    updatePlayerListUI(data.players); // Вызываем функцию для отрисовки списка в UI
+
+    // Обновляем инфо-панель, если она сейчас видна (на экране вопроса или результатов)
+    // Делаем это здесь, т.к. список игроков мог измениться
+    if (roomInfoDisplay.style.display === 'block') {
+        const playerNames = data.players.map(p => p.name).join(', ');
+        roomInfoPlayers.textContent = `Players: ${playerNames}`;
     }
 });
 
+
+// --- Сервер прислал НОВЫЙ ВОПРОС ---
 socket.on('newQuestion', (data) => {
     /*
       Ожидаем от сервера объект data:
@@ -302,26 +498,27 @@ socket.on('newQuestion', (data) => {
         duration: 10
       }
     */
-    console.log(`Получен вопрос #${data.questionNumber}: ${data.questionText}`);
+    console.log(`[New Question] Получен вопрос #${data.questionNumber}: ${data.questionText}`);
 
     // Отображаем номер вопроса
-    questionNumberDisplay.textContent = `#${data.questionNumber}`; // Показываем номер
+    questionNumberDisplay.textContent = `#${data.questionNumber || '?'}`;
 
     // Отображаем текст вопроса
-    questionText.textContent = data.questionText;
+    questionText.textContent = data.questionText || "Loading question...";
 
     // Сбрасываем и запускаем таймер
-    startTimer(data.duration);
+    startTimer(data.duration || VOTE_DURATION_SECONDS); // Используем дефолтное значение на всякий случай
 
-    // Разблокируем кнопки голосования
+    // --- ИЗМЕНЕНИЕ: Разблокируем кнопки и убираем выделение ---
     voteYesBtn.disabled = false;
     voteNoBtn.disabled = false;
+    voteYesBtn.classList.remove('selected-vote'); // Убираем класс выделения с кнопки YES
+    voteNoBtn.classList.remove('selected-vote');  // Убираем класс выделения с кнопки NO
+    console.log('[New Question] Кнопки голосования разблокированы, выделение сброшено.');
+    // --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
-    // Показываем экран с вопросом
+    // Показываем экран с вопросом (и обновляем инфо-панель внутри showScreen)
     showScreen(questionScreen);
-
-    // Опционально: Меняем главный заголовок H1 (если нужно)
-    // document.querySelector('h1').textContent = 'What do you think?';
 });
 
 socket.on('showResults', (data) => {
@@ -367,7 +564,7 @@ socket.on('showResults', (data) => {
 
 // Сервер подтвердил успешный реконнект
 socket.on('rejoinSuccess', (data) => {
-    /* Ожидаемый формат data: См. предыдущие комментарии */
+    /* Ожидаемый формат data: См. комментарии выше */
     console.log('[Rejoin Success] Rejoin successful! Received game state:', data);
 
     // Показываем короткое уведомление об успехе
@@ -377,8 +574,9 @@ socket.on('rejoinSuccess', (data) => {
     // Восстанавливаем состояние клиента
     amIHost = data.isHost;
     currentRoomCode = data.roomCode;
+    currentHostId = data.hostId; // <<< Не забываем обновить ID хоста
     roomCodeDisplay.textContent = data.roomCode;
-    updatePlayerList(data.players);
+    updatePlayerListUI(data.players); // Используем UI-функцию
 
     // Сбрасываем кнопки, которые не должны быть видны по умолчанию
     startGameBtn.style.display = 'none';
@@ -389,8 +587,11 @@ socket.on('rejoinSuccess', (data) => {
     if (gameState.state === 'waiting') {
         console.log('[Rejoin Success] Game state is WAITING.');
         startGameBtn.style.display = amIHost ? 'block' : 'none';
-        voteYesBtn.disabled = false; // Разблокируем кнопки
+        // Убедимся, что кнопки голосования разблокированы и без выделения
+        voteYesBtn.disabled = false;
         voteNoBtn.disabled = false;
+        voteYesBtn.classList.remove('selected-vote');
+        voteNoBtn.classList.remove('selected-vote');
         showScreen(waitingRoomScreen);
     } else if (gameState.state === 'question') {
          console.log('[Rejoin Success] Game state is QUESTION.');
@@ -401,21 +602,41 @@ socket.on('rejoinSuccess', (data) => {
         questionText.textContent = gameState.questionText || 'Loading question...';
         startTimer(gameState.durationLeft || VOTE_DURATION_SECONDS);
 
-        // --- ДОБАВЛЕНИЕ: Явный лог и проверка myVote ---
+        // --- ИЗМЕНЕНИЕ: Восстанавливаем состояние кнопок (disabled + selected) ---
         const myVote = gameState.myVote; // Получаем голос из состояния
-        console.log('[Rejoin Success] Получено состояние ГОЛОСА (myVote):', myVote, `(Тип: ${typeof myVote})`); // <<< ЛОГ ДАННЫХ С СЕРВЕРА
-        voteYesBtn.disabled = (myVote !== null); // Блокируем, если не null
-        voteNoBtn.disabled = (myVote !== null);  // Блокируем, если не null
+        console.log('[Rejoin Success] Получено состояние ГОЛОСА (myVote):', myVote, `(Тип: ${typeof myVote})`);
+
+        // Блокируем кнопки, если голос был (не null)
+        voteYesBtn.disabled = (myVote !== null);
+        voteNoBtn.disabled = (myVote !== null);
+
+        // Убираем выделение с обеих кнопок
+        voteYesBtn.classList.remove('selected-vote');
+        voteNoBtn.classList.remove('selected-vote');
+
+        // Добавляем выделение к нужной кнопке, ЕСЛИ голос был
+        if (myVote === 'yes') {
+            voteYesBtn.classList.add('selected-vote');
+            console.log('[Rejoin Success] Кнопка YES выделена (selected-vote).');
+        } else if (myVote === 'no') {
+            voteNoBtn.classList.add('selected-vote');
+            console.log('[Rejoin Success] Кнопка NO выделена (selected-vote).');
+        }
+
+        // Логируем итоговое состояние кнопок
          if(myVote !== null) { console.log('[Rejoin Success] Кнопки голосования ОТКЛЮЧЕНЫ (т.к. myVote не null).'); }
          else { console.log('[Rejoin Success] Кнопки голосования ВКЛЮЧЕНЫ (т.к. myVote равен null).'); }
-        // --- КОНЕЦ ДОБАВЛЕНИЯ ---
+        // --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
-        showScreen(questionScreen);
+        showScreen(questionScreen); // Показываем экран вопроса
     } else if (gameState.state === 'results') {
         console.log('[Rejoin Success] Game state is RESULTS.');
         startGameBtn.style.display = 'none';
-        voteYesBtn.disabled = true; // Блокируем кнопки
+        // Убедимся, что кнопки голосования заблокированы и без выделения
+        voteYesBtn.disabled = true;
         voteNoBtn.disabled = true;
+        voteYesBtn.classList.remove('selected-vote');
+        voteNoBtn.classList.remove('selected-vote');
 
         const yesVotes = gameState.results ? gameState.results.yesVotes : 0;
         const noVotes = gameState.results ? gameState.results.noVotes : 0;
@@ -428,13 +649,21 @@ socket.on('rejoinSuccess', (data) => {
         showScreen(resultsScreen);
         if (timerInterval) clearInterval(timerInterval);
     } else {
+        // Неизвестное или завершенное состояние
         console.error("[Rejoin Success] Unknown or finished game state received:", gameState.state);
          try { localStorage.removeItem('whoWasThat_playerId'); localStorage.removeItem('whoWasThat_roomCode'); } catch(e){}
+         // Сбрасываем все кнопки
          voteYesBtn.disabled = false;
          voteNoBtn.disabled = false;
-         showScreen(entryScreen);
+         voteYesBtn.classList.remove('selected-vote');
+         voteNoBtn.classList.remove('selected-vote');
+         startGameBtn.style.display = 'none';
+         nextQuestionBtn.style.display = 'none';
+         exitRoomBtn.style.display = 'none'; // Скрываем и выход
+        showScreen(entryScreen);
     }
 });
+
 
 // Сервер отклонил попытку реконнекта
 socket.on('rejoinFailed', (data) => {
@@ -491,6 +720,8 @@ socket.on('rejoinFailed', (data) => {
         currentAction = null;
         currentRoomCode = '';
 
+        exitRoomBtn.style.display = 'none'; // <<< Скрываем кнопку выхода
+
         // Явно скрываем кнопки, которые видны только в игре/лобби
         startGameBtn.style.display = 'none';
         nextQuestionBtn.style.display = 'none';
@@ -521,18 +752,44 @@ socket.on('rejoinFailed', (data) => {
 
 // --- Вспомогательные функции ---
 
-function updatePlayerList(players) {
-    playerList.innerHTML = '';
+
+function updatePlayerListUI(players) {
+    playerList.innerHTML = ''; // Очищаем текущий HTML список
+    if (!players) return; // Дополнительная проверка
+
     players.forEach(player => {
         const li = document.createElement('li');
-        li.textContent = player.name;
-        if (player.id === socket.id) {
-             li.textContent += ' (You)';
-             li.style.fontWeight = 'bold'; // Выделяем себя
+        let displayName = player.name; // Начинаем с имени
+        let isCurrentUser = (player.id === socket.id); // Флаг, что это текущий игрок
+        let isCurrentHost = (player.id === currentHostId); // Флаг, что это хост
+
+        // Формируем итоговый текст
+        if (isCurrentUser && isCurrentHost) {
+            displayName += ' (You, Host)';
+        } else if (isCurrentUser) {
+            displayName += ' (You)';
+        } else if (isCurrentHost) {
+            displayName += ' (Host)';
         }
-        // TODO: Можно получать hostId от сервера и помечать хоста
-        playerList.appendChild(li);
+        // Устанавливаем текст ОДИН раз
+        li.textContent = displayName;
+
+        // Добавляем классы для стилизации
+        if (isCurrentHost) {
+            li.classList.add('host-name');
+        }
+        if (isCurrentUser) {
+            li.classList.add('my-name');
+        }
+
+        playerList.appendChild(li); // Добавляем элемент в список на странице
     });
+
+    // Обновляем инфо-панель, если она видна
+    if (roomInfoDisplay.style.display === 'block') {
+          const playerNames = players.map(p => p.name).join(', ');
+          roomInfoPlayers.textContent = `Players: ${playerNames}`;
+    }
 }
 
 // Функция для отправки попытки переподключения
