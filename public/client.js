@@ -489,51 +489,86 @@ socket.on('updatePlayerList', (data) => {
 
 
 // --- Сервер прислал НОВЫЙ ВОПРОС ---
+// --- Сервер прислал НОВЫЙ ВОПРОС ---
 socket.on('newQuestion', (data) => {
     /*
       Ожидаем от сервера объект data:
       {
-        questionNumber: 1, // НОМЕР ВОПРОСА
+        questionId: 101, // <<< ID ИЗ JSON
         questionText: "Текст вопроса?",
         duration: 10
       }
     */
-    console.log(`[New Question] Получен вопрос #${data.questionNumber}: ${data.questionText}`);
+    console.log(`[New Question] Получен вопрос ID: ${data.questionId || 'N/A'}, Текст: ${data.questionText}`);
 
-    // Отображаем номер вопроса
-    questionNumberDisplay.textContent = `#${data.questionNumber || '?'}`;
-
-    // Отображаем текст вопроса
-    questionText.textContent = data.questionText || "Loading question...";
-
-    // Сбрасываем и запускаем таймер
-    startTimer(data.duration || VOTE_DURATION_SECONDS); // Используем дефолтное значение на всякий случай
-
-    // --- ИЗМЕНЕНИЕ: Разблокируем кнопки и убираем выделение ---
-    voteYesBtn.disabled = false;
-    voteNoBtn.disabled = false;
-    voteYesBtn.classList.remove('selected-vote'); // Убираем класс выделения с кнопки YES
-    voteNoBtn.classList.remove('selected-vote');  // Убираем класс выделения с кнопки NO
-    console.log('[New Question] Кнопки голосования разблокированы, выделение сброшено.');
+    // --- ИЗМЕНЕНИЕ: Показываем ID вопроса ---
+    if (questionNumberDisplay) {
+         questionNumberDisplay.textContent = `#${data.questionId || '?'}`; // Устанавливаем ID
+         questionNumberDisplay.style.display = 'block'; // <<< ДЕЛАЕМ ВИДИМЫМ
+    }
+    if (questionText) {
+        questionText.textContent = data.questionText || "Loading question..."; // Показываем текст вопроса
+    }
     // --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
-    // Показываем экран с вопросом (и обновляем инфо-панель внутри showScreen)
+    // Сбрасываем и запускаем таймер
+    startTimer(data.duration || VOTE_DURATION_SECONDS);
+
+    // Разблокируем кнопки и убираем выделение
+    if (voteYesBtn) {
+        voteYesBtn.disabled = false;
+        voteYesBtn.classList.remove('selected-vote');
+    }
+    if (voteNoBtn) {
+        voteNoBtn.disabled = false;
+        voteNoBtn.classList.remove('selected-vote');
+    }
+    console.log('[New Question] Кнопки голосования разблокированы, выделение сброшено.');
+
+    // Показываем экран с вопросом
     showScreen(questionScreen);
 });
 
 socket.on('showResults', (data) => {
-    console.log('Showing results:', data);
-    resultsText.textContent = `YES: ${data.yesVotes}, NO: ${data.noVotes}`;
+    /*
+       Ожидаем от сервера объект data:
+       {
+         yesVotes: 3,
+         noVotes: 1,
+         questionId: 101, // <<< ID ИЗ JSON
+         questionText: "Текст вопроса, на который отвечали"
+       }
+    */
+    console.log('[Show Results] Получены результаты:', data);
 
-    // Обновляем текст вопроса-напоминания
+    // Обновляем текст с результатами
+    // if (resultsText) resultsText.textContent = `YES: ${data.yesVotes || 0}, NO: ${data.noVotes || 0}`;
+    const yesCountSpan = resultsScreen.querySelector('.results-count-yes');
+const noCountSpan = resultsScreen.querySelector('.results-count-no');
+if (yesCountSpan) yesCountSpan.textContent = data.yesVotes || 0;
+if (noCountSpan) noCountSpan.textContent = data.noVotes || 0;
+
+    // Обновляем текст вопроса-напоминания, используя ID из JSON
     const questionReminder = resultsScreen.querySelector('.question-reminder');
-    if (questionReminder) {
-         questionReminder.textContent = `Question: ${data.questionText || ''}`;
-    }
+     if(questionReminder) {
+         // --- ИЗМЕНЕНИЕ: Используем ID из JSON ---
+         questionReminder.textContent = `#${data.questionId || '?'} ${data.questionText || ''}`;
+         // --- КОНЕЦ ИЗМЕНЕНИЯ ---
+     } else {
+          console.warn("[Show Results] Элемент .question-reminder не найден.");
+     }
 
+    // Показываем экран результатов
     showScreen(resultsScreen);
-    nextQuestionBtn.style.display = amIHost ? 'block' : 'none'; // Показываем кнопку хосту
-    if (timerInterval) clearInterval(timerInterval);
+
+    // Показываем кнопку "Next Question" ТОЛЬКО ведущему
+    if (nextQuestionBtn) nextQuestionBtn.style.display = amIHost ? 'block' : 'none';
+
+     // Останавливаем клиентский таймер на всякий случай
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
 });
 
     socket.on('youAreHostNow', () => {
@@ -564,102 +599,98 @@ socket.on('showResults', (data) => {
 
 // Сервер подтвердил успешный реконнект
 socket.on('rejoinSuccess', (data) => {
-    /* Ожидаемый формат data: См. комментарии выше */
+    /* Ожидаемый формат data: См. комментарии выше, теперь с questionId */
     console.log('[Rejoin Success] Rejoin successful! Received game state:', data);
 
-    // Показываем короткое уведомление об успехе
     openInfoModal("Reconnected!", "Successfully rejoined the game.");
-    setTimeout(closeInfoModal, 1500); // Закрыть через 1.5 сек
+    setTimeout(closeInfoModal, 1500);
 
-    // Восстанавливаем состояние клиента
     amIHost = data.isHost;
     currentRoomCode = data.roomCode;
-    currentHostId = data.hostId; // <<< Не забываем обновить ID хоста
-    roomCodeDisplay.textContent = data.roomCode;
-    updatePlayerListUI(data.players); // Используем UI-функцию
+    currentHostId = data.hostId;
+    if(roomCodeDisplay) roomCodeDisplay.textContent = data.roomCode;
+    updatePlayerListUI(data.players);
 
-    // Сбрасываем кнопки, которые не должны быть видны по умолчанию
-    startGameBtn.style.display = 'none';
-    nextQuestionBtn.style.display = 'none';
+    if(startGameBtn) startGameBtn.style.display = 'none';
+    if(nextQuestionBtn) nextQuestionBtn.style.display = 'none';
 
-    // Отображаем правильный экран и данные игры на основе gameState
     const gameState = data.gameState;
     if (gameState.state === 'waiting') {
         console.log('[Rejoin Success] Game state is WAITING.');
-        startGameBtn.style.display = amIHost ? 'block' : 'none';
-        // Убедимся, что кнопки голосования разблокированы и без выделения
-        voteYesBtn.disabled = false;
-        voteNoBtn.disabled = false;
-        voteYesBtn.classList.remove('selected-vote');
-        voteNoBtn.classList.remove('selected-vote');
+        if(startGameBtn) startGameBtn.style.display = amIHost ? 'block' : 'none';
+        if(voteYesBtn) voteYesBtn.disabled = false;
+        if(voteNoBtn) voteNoBtn.disabled = false;
+        if(voteYesBtn) voteYesBtn.classList.remove('selected-vote');
+        if(voteNoBtn) voteNoBtn.classList.remove('selected-vote');
         showScreen(waitingRoomScreen);
     } else if (gameState.state === 'question') {
          console.log('[Rejoin Success] Game state is QUESTION.');
-         startGameBtn.style.display = 'none';
-         nextQuestionBtn.style.display = 'none';
+         if(startGameBtn) startGameBtn.style.display = 'none';
+         if(nextQuestionBtn) nextQuestionBtn.style.display = 'none';
 
-        questionNumberDisplay.textContent = `#${gameState.questionNumber || '?'}`;
-        questionText.textContent = gameState.questionText || 'Loading question...';
-        startTimer(gameState.durationLeft || VOTE_DURATION_SECONDS);
+         // --- ИЗМЕНЕНИЕ: Скрываем номер, показываем текст ---
+         if(questionNumberDisplay) {
+             questionNumberDisplay.textContent = `#${gameState.questionId || '?'}`; // Устанавливаем ID
+             questionNumberDisplay.style.display = 'block'; // <<< ДЕЛАЕМ ВИДИМЫМ
+         }
+         if(questionText) questionText.textContent = gameState.questionText || 'Loading question...';
+         // --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
-        // --- ИЗМЕНЕНИЕ: Восстанавливаем состояние кнопок (disabled + selected) ---
-        const myVote = gameState.myVote; // Получаем голос из состояния
-        console.log('[Rejoin Success] Получено состояние ГОЛОСА (myVote):', myVote, `(Тип: ${typeof myVote})`);
+         startTimer(gameState.durationLeft || VOTE_DURATION_SECONDS);
 
-        // Блокируем кнопки, если голос был (не null)
-        voteYesBtn.disabled = (myVote !== null);
-        voteNoBtn.disabled = (myVote !== null);
+         const myVote = gameState.myVote;
+         console.log('[Rejoin Success] Получено состояние ГОЛОСА (myVote):', myVote, `(Тип: ${typeof myVote})`);
+         if(voteYesBtn) voteYesBtn.disabled = (myVote !== null);
+         if(voteNoBtn) voteNoBtn.disabled = (myVote !== null);
 
-        // Убираем выделение с обеих кнопок
-        voteYesBtn.classList.remove('selected-vote');
-        voteNoBtn.classList.remove('selected-vote');
+         if(voteYesBtn) voteYesBtn.classList.remove('selected-vote');
+         if(voteNoBtn) voteNoBtn.classList.remove('selected-vote');
+         if (myVote === 'yes' && voteYesBtn) {
+             voteYesBtn.classList.add('selected-vote');
+         } else if (myVote === 'no' && voteNoBtn) {
+             voteNoBtn.classList.add('selected-vote');
+         }
+         if(myVote !== null) { console.log('[Rejoin Success] Кнопки голосования ОТКЛЮЧЕНЫ.'); }
+         else { console.log('[Rejoin Success] Кнопки голосования ВКЛЮЧЕНЫ.'); }
 
-        // Добавляем выделение к нужной кнопке, ЕСЛИ голос был
-        if (myVote === 'yes') {
-            voteYesBtn.classList.add('selected-vote');
-            console.log('[Rejoin Success] Кнопка YES выделена (selected-vote).');
-        } else if (myVote === 'no') {
-            voteNoBtn.classList.add('selected-vote');
-            console.log('[Rejoin Success] Кнопка NO выделена (selected-vote).');
-        }
-
-        // Логируем итоговое состояние кнопок
-         if(myVote !== null) { console.log('[Rejoin Success] Кнопки голосования ОТКЛЮЧЕНЫ (т.к. myVote не null).'); }
-         else { console.log('[Rejoin Success] Кнопки голосования ВКЛЮЧЕНЫ (т.к. myVote равен null).'); }
-        // --- КОНЕЦ ИЗМЕНЕНИЯ ---
-
-        showScreen(questionScreen); // Показываем экран вопроса
+         showScreen(questionScreen);
     } else if (gameState.state === 'results') {
         console.log('[Rejoin Success] Game state is RESULTS.');
-        startGameBtn.style.display = 'none';
-        // Убедимся, что кнопки голосования заблокированы и без выделения
-        voteYesBtn.disabled = true;
-        voteNoBtn.disabled = true;
-        voteYesBtn.classList.remove('selected-vote');
-        voteNoBtn.classList.remove('selected-vote');
-
+        if(startGameBtn) startGameBtn.style.display = 'none';
+        if(voteYesBtn) voteYesBtn.disabled = true;
+        if(voteNoBtn) voteNoBtn.disabled = true;
+        if(voteYesBtn) voteYesBtn.classList.remove('selected-vote');
+        if(voteNoBtn) voteNoBtn.classList.remove('selected-vote');
         const yesVotes = gameState.results ? gameState.results.yesVotes : 0;
         const noVotes = gameState.results ? gameState.results.noVotes : 0;
-        resultsText.textContent = `YES: ${yesVotes}, NO: ${noVotes}`;
+        const yesCountSpanR = resultsScreen.querySelector('.results-count-yes'); // Используем другие переменные на всякий случай
+        const noCountSpanR = resultsScreen.querySelector('.results-count-no');
+        if (yesCountSpanR) yesCountSpanR.textContent = yesVotes;
+        if (noCountSpanR) noCountSpanR.textContent = noVotes;
+
+       // const yesVotes = gameState.results ? gameState.results.yesVotes : 0;
+       // const noVotes = gameState.results ? gameState.results.noVotes : 0;
+       // if(resultsText) resultsText.textContent = `YES: ${yesVotes}, NO: ${noVotes}`;
+
         const questionReminder = resultsScreen.querySelector('.question-reminder');
         if (questionReminder) {
-            questionReminder.textContent = `Question #${gameState.questionNumber || '?'}: ${gameState.questionText || ''}`;
+             // --- ИЗМЕНЕНИЕ: Используем ID из JSON ---
+             questionReminder.textContent = `#${gameState.questionId || '?'} ${gameState.questionText || ''}`;
+             // --- КОНЕЦ ИЗМЕНЕНИЯ ---
         }
-        nextQuestionBtn.style.display = amIHost ? 'block' : 'none';
+        if(nextQuestionBtn) nextQuestionBtn.style.display = amIHost ? 'block' : 'none';
         showScreen(resultsScreen);
         if (timerInterval) clearInterval(timerInterval);
     } else {
-        // Неизвестное или завершенное состояние
         console.error("[Rejoin Success] Unknown or finished game state received:", gameState.state);
          try { localStorage.removeItem('whoWasThat_playerId'); localStorage.removeItem('whoWasThat_roomCode'); } catch(e){}
-         // Сбрасываем все кнопки
-         voteYesBtn.disabled = false;
-         voteNoBtn.disabled = false;
-         voteYesBtn.classList.remove('selected-vote');
-         voteNoBtn.classList.remove('selected-vote');
-         startGameBtn.style.display = 'none';
-         nextQuestionBtn.style.display = 'none';
-         exitRoomBtn.style.display = 'none'; // Скрываем и выход
+         if(voteYesBtn) voteYesBtn.disabled = false;
+         if(voteNoBtn) voteNoBtn.disabled = false;
+         if(voteYesBtn) voteYesBtn.classList.remove('selected-vote');
+         if(voteNoBtn) voteNoBtn.classList.remove('selected-vote');
+         if(startGameBtn) startGameBtn.style.display = 'none';
+         if(nextQuestionBtn) nextQuestionBtn.style.display = 'none';
+         if(exitRoomBtn) exitRoomBtn.style.display = 'none';
         showScreen(entryScreen);
     }
 });

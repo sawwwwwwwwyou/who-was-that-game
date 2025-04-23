@@ -53,11 +53,20 @@
         </div>
 
     <!-- Экран результатов (оставляем как есть) -->
-    <div id="resultsScreen" style="display: none;">
+      <div id="resultsScreen" style="display: none;">
         <h2>Results</h2>
-        <p class="question-reminder"></p> <!-- Убедимся, что этот элемент есть -->
-        <p id="resultsText">YES: 0, NO: 0</p>
-        <button id="nextQuestionBtn" style="display: none;">Next Question</button>
+        <p class="question-reminder">#? Question Text</p>
+        <!-- НОВАЯ СТРУКТУРА ДЛЯ РЕЗУЛЬТАТОВ -->
+        <p id="resultsText" class="results-container">
+            <span class="results-yes">
+                <span class="results-count-yes">0</span> Yes
+            </span>
+            <span class="results-no">
+                <span class="results-count-no">0</span> No
+            </span>
+        </p>
+        <!-- КОНЕЦ НОВОЙ СТРУКТУРЫ -->
+        <button id="nextQuestionBtn" class="pill-button">Next Question</button> <!-- Убедимся, что класс есть -->
     </div>
 
 <!-- Кнопка выхода из комнаты (изначально скрыта) -->

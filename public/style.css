@@ -7,8 +7,8 @@
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-    background-color: #1c1e21;
-    color: #e4e6eb;
+    background-color: #191919; /* GOTH */
+    color: #e4e6eb; /* Светлый текст */
     line-height: 1.5;
     display: flex;
     flex-direction: column;
@@ -23,6 +23,7 @@ h1 {
     text-align: center;
     margin-bottom: 30px;
     font-size: 2.5em;
+    font-weight: 600;
 }
 
 /* --- Базовые стили для ВСЕХ кнопок --- */
@@ -33,13 +34,13 @@ button {
     margin-top: 10px;
     margin-bottom: 10px;
     border: none;
-    border-radius: 50px; /* !!! ПИЛЮЛЯ ДЛЯ ВСЕХ !!! */
-    color: white;
+    border-radius: 50px; /* Пилюля */
+    color: white; /* Белый текст по умолчанию */
     cursor: pointer;
-    transition: background-color 0.2s ease, transform 0.1s ease, filter 0.2s ease;
+    transition: background-color 0.2s ease, transform 0.1s ease, filter 0.2s ease, opacity 0.3s ease;
     text-align: center;
     display: inline-block;
-    width: auto; /* Ширина по контенту по умолчанию */
+    width: auto;
     min-width: 150px;
 }
 button:hover:not(:disabled) {
@@ -49,12 +50,14 @@ button:active:not(:disabled) {
     transform: scale(0.97);
     filter: brightness(1);
 }
+/* Базовый стиль неактивной кнопки */
 button:disabled {
     background-color: #555 !important;
     color: #888 !important;
     cursor: not-allowed;
     transform: none;
     filter: brightness(0.8);
+    opacity: 0.7;
 }
 
 /* --- Стилизация Контейнеров Экранов --- */
@@ -62,43 +65,45 @@ button:disabled {
 #waitingRoomScreen,
 #questionScreen,
 #resultsScreen {
-    background-color: #2a2d35;
+    background-color: #2a2d35; /* Темно-серый фон контейнера */
     max-width: 550px;
     width: 100%;
     margin: 10px auto;
     padding: 35px 30px;
-    border-radius: 16px; /* Контейнеры остаются со скругленными углами */
+    border-radius: 16px;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
     display: flex;
     flex-direction: column;
     align-items: center;
+    position: relative; /* Для позиционирования .question-number */
 }
 
 /* --- Заголовки внутри блоков --- */
-h2, h3 { color: #ffffff; text-align: center; margin-bottom: 25px; }
+h2, h3 { color: #ffffff; text-align: center; margin-bottom: 25px; font-weight: 600; }
 h2 { font-size: 1.6em; }
 h3 { font-size: 1.3em; }
 
 /* --- ЭКРАН ВХОДА --- */
-.input-label { font-size: 0.9em; color: #aaa; margin-bottom: 5px; text-transform: uppercase; font-weight: 600; }
+/* Убрал CAPS */
+.input-label { font-size: 0.9em; color: #aaa; margin-bottom: 5px; /* text-transform: uppercase; */ font-weight: 600; }
 #roomCodeInput {
     font-size: 1.2em; padding: 12px 15px; margin-bottom: 20px;
-    border: 1px solid #444;
-    border-radius: 8px; /* !!! Поле ввода - НЕ пилюля !!! */
+    border: 1px solid #444; border-radius: 8px;
     background-color: #3a3d45; color: #e4e6eb; width: 90%;
-    max-width: 280px; text-align: center; text-transform: uppercase;
+    max-width: 280px; text-align: center; text-transform: uppercase; /* Оставил CAPS для кода */
 }
 #roomCodeInput::placeholder { color: #777; }
 
-/* Конкретные стили для кнопок входа (цвет + ширина) */
+/* Кнопки входа */
 #joinRoomBtn, #createRoomBtn {
     margin-top: 0;
     min-width: 180px;
 }
-#joinRoomBtn { background-color: #28a745; } /* Синий */
-#createRoomBtn { background-color: #007bff; } /* !!! МЕНЯЕМ НА ГОЛУБОЙ (тот же, что у Next/Return) !!! */
+/* Применяем цвета из палитры */
+#joinRoomBtn { background-color: #D3FF33; color: #191919; } /* Shrek Skin (был зеленый) */
+#createRoomBtn { background-color: #3939FF; color: white; }   /* Internet Blue (был голубой/серый) */
 
-.separator { color: #888; margin: 25px 0; font-weight: 600; width: 100%; text-align: center; position: relative; }
+.separator { color: #888; margin: 25px 0; font-weight: 600; width: 100%; text-align: center; position: relative; /* text-transform: uppercase; */ } /* Убрал CAPS */
 .separator::before, .separator::after { content: ''; position: absolute; top: 50%; width: 35%; height: 1px; background-color: #555; }
 .separator::before { left: 10px; }
 .separator::after { right: 10px; }
@@ -121,232 +126,170 @@ h3 { font-size: 1.3em; }
 /* Поле ввода в модалке Имени */
 #modalNameInput {
     font-size: 1.1em; padding: 12px 15px; margin-bottom: 25px;
-    border: 1px solid #444;
-    border-radius: 8px; /* !!! Поле ввода - НЕ пилюля !!! */
+    border: 1px solid #444; border-radius: 8px;
     background-color: #3a3d45; color: #e4e6eb; width: 100%;
 }
 #modalNameInput::placeholder { color: #777; }
-/* Кнопки в модальных окнах (цвет + ширина) */
-#modalConfirmBtn, #modalCancelBtn, #gameOverReturnBtn, #infoModalCloseBtn { /* Добавили #infoModalCloseBtn */
-    /* Наследуем .pill-button */
-    width: 90%;
-    max-width: 300px;
-    margin-left: auto;
-    margin-right: auto;
+
+/* Кнопки в модальных окнах */
+#modalConfirmBtn, #modalCancelBtn, #gameOverReturnBtn, #infoModalCloseBtn,
+#confirmExitBtn, #cancelExitBtn {
+    width: 90%; max-width: 300px; margin-left: auto; margin-right: auto;
 }
-#modalConfirmBtn { background-color: #28a745; margin-top: 0; } /* Зеленая */
-#modalCancelBtn { background-color: #dc3545; } /* Красная */
-#gameOverReturnBtn { background-color: #007bff; } /* Синяя */
-#infoModalCloseBtn { background-color: #6c757d; } /* Серая кнопка OK */
-/* Кнопки в модальных окнах (цвет + ширина) */
-#modalConfirmBtn, #modalCancelBtn, #gameOverReturnBtn {
-    width: 90%;
-    max-width: 300px;
-    margin-left: auto;
-    margin-right: auto;
-}
-#modalConfirmBtn { background-color: #28a745; margin-top: 0; } /* Зеленая */
-#modalCancelBtn { background-color: #dc3545; } /* Красная */
-#gameOverReturnBtn { background-color: #007bff; } /* Синяя */
+/* Применяем цвета из палитры */
+#modalConfirmBtn { background-color: #D3FF33; color: #191919; margin-top: 0; } /* Shrek Skin */
+#modalCancelBtn { background-color: #FF5B22; color: white; }                /* Traffic Cone */
+#gameOverReturnBtn { background-color: #3939FF; color: white; }            /* Internet Blue */
+#infoModalCloseBtn { background-color: #DBB8FF; color: #191919; }            /* Bratz Purple */
+#confirmExitBtn { background-color: #FF5B22; color: white; }             /* Traffic Cone */
+#cancelExitBtn { background-color: #6c757d; color: white; }              /* Серый (Остаться) - Оставил серым для ясности */
 
 
 /* --- Стили Экрана Ожидания --- */
 #waitingRoomScreen h3 { margin-top: 25px; margin-bottom: 15px; font-size: 1.3em; }
 #playerList { list-style: none; padding: 0; width: 90%; max-width: 380px; text-align: center; }
-#playerList li { background-color: #3a3d45; padding: 12px 18px; border-radius: 8px; margin-bottom: 10px; font-size: 1.1em; } /* Список игроков - НЕ пилюли */
-#roomCodeDisplay { font-weight: bold; font-size: 1.2em; color: #f0a05a; background-color: #3a3d45; padding: 5px 12px; border-radius: 6px; display: inline-block; margin-bottom: 15px;} /* Код комнаты - НЕ пилюля */
-#startGameBtn { /* Зеленая пилюля */
-    background-color: #28a745;
-    margin-top: 30px;
-    min-width: 180px;
-}
-
 #playerList li {
-    background-color: #3a3d45;
+    background-color: #3a3d45; /* Фон элемента списка */
     padding: 12px 18px;
     border-radius: 8px;
     margin-bottom: 10px;
     font-size: 1.1em;
-    transition: background-color 0.2s, color 0.2s; /* Плавные переходы */
+    transition: background-color 0.2s, color 0.2s;
+    color: #e4e6eb; /* Стандартный цвет текста */
+    font-weight: 500;
+    font-style: normal;
 }
-
 #playerList li.my-name { /* Стиль для своего имени */
-    background-color: #4a71e0; /* Темно-синий фон */
-    color: #fff; /* Белый текст */
-    font-style: italic; /* Оставляем курсив */
-    font-weight: bold; /* Можно сделать жирным */
-}
-
-#playerList li.host-name { /* Стиль для хоста (можно добавить иконку или рамку) */
-   /* Например, добавим легкую рамку */
-   /* border: 1px solid #f0a05a; */
-   /* Или просто сделаем текст жирнее */
-   font-weight: bold;
-   /* Текст "(Host)" уже добавляется в JS */
-}
-
-/* Стили для номера вопроса */
-.question-number {
-    font-size: 1.8em; /* Крупный */
+    color: #AEE6ED; /* <<< Carebear Fuzz ТЕКСТ */
+    /* Убрал background-color */
+    font-style: italic;
     font-weight: bold;
-    color: #777; /* Приглушенный серый */
-    margin-bottom: 10px; /* Отступ до текста вопроса */
-    text-align: center; /* Центрируем */
 }
-/* --- Стили Экрана Вопроса --- */
-/* --- Стили Экрана Вопроса --- */
-/* ... (стили #questionScreen #questionText и #timerText (бывший p)) ... */
-#questionScreen #questionText { font-size: 1.6em; font-weight: 600; margin-bottom: 20px; text-align: center;}
-#questionScreen #timerText { /* Используем ID */
-    color: #aaa; margin-bottom: 30px; font-size: 1.2em; font-weight: bold; text-align: center;
+#playerList li.host-name { /* Стиль для хоста */
+   font-weight: bold; /* Просто жирнее */
 }
-#voteButtonsContainer { display: flex; justify-content: center; gap: 20px; width: 100%; flex-wrap: wrap; }
+#roomCodeDisplay {
+    font-weight: bold; font-size: 1.2em; color: white;
+    background-color: #3939FF; /* <<< Internet Blue ФОН */
+    padding: 5px 12px; border-radius: 6px; display: inline-block; margin-bottom: 15px;
+}
+#startGameBtn {
+    background-color: #D3FF33; /* <<< Shrek Skin */
+    color: #191919; /* Темный текст */
+    margin-top: 30px;
+    min-width: 180px;
+}
 
-/* Используем базовый стиль пилюли */
+/* --- Стили Экрана Вопроса --- */
+#questionScreen { padding-bottom: 20px; }
+.question-number {
+    position: absolute; top: 15px; left: 20px; font-size: 1.4em;
+    font-weight: bold; color: #666; opacity: 0.7; line-height: 1;
+}
+#questionScreen #questionText { font-size: 1.7em; font-weight: 600; margin-bottom: 25px; margin-top: 30px; text-align: center; color: #ffffff;}
+#questionScreen #timerText { color: #aaa; margin-bottom: 35px; font-size: 1.2em; font-weight: bold; text-align: center;}
+#voteButtonsContainer { display: flex; justify-content: center; gap: 25px; width: 100%; flex-wrap: wrap; }
+
+/* Кнопки голосования */
 #voteYesBtn, #voteNoBtn {
-    /* Наследуем .pill-button (убедимся что класс добавлен в HTML или стили скопированы) */
     min-width: 140px;
     font-size: 1.2em;
     padding: 16px 40px;
-    transition: background-color 0.2s ease, transform 0.1s ease, filter 0.2s ease, opacity 0.3s; /* Добавим opacity */
-    /* Убираем общий background-color отсюда */
 }
+/* Применяем цвета из палитры */
+#voteYesBtn { background-color: #D3FF33; color: #191919; } /* Shrek Skin */
+#voteNoBtn { background-color: #FF5B22; color: #191919; }   /* Traffic Cone */
 
-/* Цвета для YES/NO */
-#voteYesBtn {
-    background-color: #28a745; /* Зеленый */
-}
-#voteYesBtn:hover:not(:disabled) {
-    background-color: #218838; /* Темнее зеленый */
-    filter: none; /* Убираем filter: brightness, т.к. есть явный hover цвет */
-}
+/* Ховеры для кнопок голосования */
+#voteYesBtn:hover:not(:disabled) { background-color: #b8e600; filter: none;} /* Темнее лайм */
+#voteNoBtn:hover:not(:disabled) { background-color: #e04a1b; filter: none;} /* Темнее оранжевый */
 
-#voteNoBtn {
-    background-color: #dc3545; /* Красный */
+/* Стиль для ВЫБРАННОЙ неактивной кнопки */
+#voteYesBtn:disabled.selected-vote,
+#voteNoBtn:disabled.selected-vote {
+    background-color: #212529 !important; /* Очень темный */
+    color: #CCCCCC !important;           /* Светло-серый текст */
+    opacity: 1;                          /* Непрозрачная */
+    transform: none; filter: none; cursor: not-allowed; box-shadow: none;
 }
- #voteNoBtn:hover:not(:disabled) {
-    background-color: #c82333; /* Темнее красный */
-    filter: none; /* Убираем filter: brightness */
-}
-
-#voteYesBtn:disabled, #voteNoBtn:disabled {
-    background-color: #555 !important;
-    color: #888 !important;
-    cursor: not-allowed;
-    transform: none;
-    filter: brightness(0.8);
-    opacity: 0.6; /* Делаем невыбранные неактивные тусклее */
-}
-
-    #voteYesBtn:disabled.selected-vote,
-    #voteNoBtn:disabled.selected-vote {
-        background-color: #212529 !important; /* <<< ЗАМЕНА: Очень темный серый */
-        color: #CCCCCC !important;           /* <<< ЗАМЕНА: Очень светлый серый текст для контраста */
-        opacity: 1;                          /* Оставляем непрозрачным */
-        transform: none;                     /* Убираем эффекты */
-        filter: none;
-        cursor: not-allowed;                 /* Курсор неактивности */
-        /* Убираем тень, если она была, т.к. фон темный */
-        box-shadow: none;
-    }
-
-/* Важно: Стили для :disabled должны перебивать цветные! */
-#voteYesBtn:disabled, #voteNoBtn:disabled {
-    background-color: #555 !important;
-    color: #888 !important;
-    cursor: not-allowed;
-    transform: none;
-    filter: brightness(0.8);
-}
-/* Опциональные цвета для ДА/НЕТ */
-/* #voteYesBtn { background-color: #28a745; } */
-/* #voteNoBtn { background-color: #dc3545; } */
+/* Стиль для НЕВЫБРАННОЙ неактивной кнопки наследуется из button:disabled (темно-серый + полупрозрачный) */
 
 
 /* --- Стили Экрана Результатов --- */
 #resultsScreen .question-reminder { font-size: 1em; color: #bbb; margin-bottom: 20px; font-style: italic; text-align: center;}
-#resultsText { font-size: 2em; font-weight: bold; margin-bottom: 30px; color: #ffffff; text-align: center;}
-#nextQuestionBtn { /* Синяя пилюля */
-    background-color: #007bff;
+.results-container { /* Контейнер для YES/NO */
+    font-size: 2.8em; font-weight: bold; margin-bottom: 30px;
+    text-align: center; display: flex; justify-content: center;
+    gap: 25px; flex-wrap: wrap;
+    /* Убрали общий цвет отсюда */
+}
+/* Цвет для всего блока YES */
+.results-container .results-yes {
+    color: #D3FF33; /* Shrek Skin */
+}
+/* Цвет для всего блока NO */
+.results-container .results-no {
+    color: #FF5B22; /* Traffic Cone */
+}
+/* Опционально: стили для жирности чисел */
+/* Отступ между цифрой и словом в результатах */
+.results-container .results-count-yes,
+.results-container .results-count-no {
+    font-weight: 800; /* Оставляем жирность, если нужна */
+    margin-right: 0.01em; /* <<< УМЕНЬШЕННОЕ ЗНАЧЕНИЕ (подбери точнее, если нужно) */
+}
+#nextQuestionBtn {
+    background-color: #3939FF; /* <<< Internet Blue */
+    color: white; /* Убедись, что текст белый */
     min-width: 180px;
+    /* ... остальные стили пилюли ... */
 }
 
 
-#confirmExitBtn { background-color: #dc3545; } /* Красный (Подтвердить выход) */
-#cancelExitBtn { background-color: #6c757d; } /* Серый (Остаться) */
-/* Стиль кнопки выхода по умолчанию (в лобби) */
+/* --- Кнопка Выхода --- */
 .exit-button {
-    background-color: #ffc107;
-    color: #212529;
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    width: auto;
-    min-width: 120px;
-    z-index: 50;
-    transition: opacity 0.3s ease, background-color 0.2s ease; /* Добавляем transition для opacity */
+    background-color: #AEE6ED; /* <<< Carebear Fuzz */
+    color: #191919; /* Темный текст */
+    position: fixed; bottom: 20px; right: 20px; width: auto;
+    min-width: 120px; z-index: 50; transition: opacity 0.3s ease, background-color 0.2s ease;
     opacity: 1; /* По умолчанию непрозрачная */
 }
 .exit-button:hover:not(:disabled) {
-    background-color: #e0a800;
+    background-color: #92dce5; /* Темнее Carebear Fuzz */
     filter: none;
-    opacity: 1; /* При наведении делаем непрозрачной */
-}
-
-/* Стиль кнопки выхода ВО ВРЕМЯ ИГРЫ (когда у body есть класс in-game-active) */
-body.in-game-active .exit-button {
-    opacity: 0.5; /* <<< Делаем полупрозрачной */
-}
-
-/* При наведении на полупрозрачную кнопку - делаем ее снова непрозрачной */
-body.in-game-active .exit-button:hover:not(:disabled) {
     opacity: 1;
 }
-/* Стиль кнопки выхода */
-.exit-button {
-    background-color: #ffc107; /* Предупреждающий желтый/оранжевый цвет */
-    color: #212529; /* Темный текст для контраста */
-    position: fixed; /* Позиционируем относительно окна браузера */
-    bottom: 20px;    /* Отступ снизу */
-    right: 20px;     /* Отступ справа */
-    width: auto;     /* Ширина по контенту */
-    min-width: 120px;
-    z-index: 50; /* Ниже модалок, но выше основного контента */
+/* Стиль кнопки выхода ВО ВРЕМЯ ИГРЫ */
+body.in-game-active .exit-button {
+    opacity: 0.5; /* Полупрозрачная */
 }
-.exit-button:hover:not(:disabled) {
-    background-color: #e0a800;
-    filter: none; /* Убираем стандартный brightness */
+/* При наведении на полупрозрачную кнопку */
+body.in-game-active .exit-button:hover:not(:disabled) {
+    opacity: 1; /* Снова непрозрачная */
 }
-/* Стиль для инфо-панели комнаты */
+
+
+/* --- Инфо-панель комнаты --- */
 .room-info {
-    position: fixed; /* Или absolute, если нужно внутри другого контейнера */
-    top: 15px;
-    right: 20px;
-    background-color: rgba(42, 45, 53, 0.8); /* Полупрозрачный фон */
-    color: #ccc;
-    padding: 5px 15px;
-    border-radius: 8px;
-    font-size: 0.85em;
-    z-index: 40; /* Ниже кнопки Exit и модалок */
-    opacity: 0.8; /* Полупрозрачность */
+    position: fixed; top: 15px; right: 20px; background-color: rgba(42, 45, 53, 0.8);
+    color: #ccc; padding: 5px 15px; border-radius: 8px; font-size: 0.85em;
+    z-index: 40; opacity: 0.8;
 }
-.room-info span { /* Стиль для текста внутри */
-    margin: 0 5px;
-}
+.room-info span { margin: 0 5px; }
+
+
 /* --- Адаптивность --- */
 @media (max-width: 480px) {
     body { padding: 5px; }
     h1 { font-size: 1.8em; margin-bottom: 20px;}
     h2 { font-size: 1.3em; }
     h3 { font-size: 1.1em; }
-    button { /* Пилюли поменьше на маленьких экранах */
-         padding: 12px 25px; font-size: 1em; min-width: 120px;
-    }
-    #voteYesBtn, #voteNoBtn { /* Кнопки голосования */
-        padding: 14px 30px; font-size: 1.1em; min-width: 110px;
-    }
-    #entryScreen, #waitingRoomScreen, #questionScreen, #resultsScreen, .modal-content { padding: 25px 20px; }
-    #questionScreen #questionText { font-size: 1.3em; }
-    #resultsText { font-size: 1.6em; }
-    .separator::before, .separator::after { width: 30%; }
+    button { padding: 12px 25px; font-size: 1em; min-width: 120px;}
+    #voteYesBtn, #voteNoBtn { padding: 14px 30px; font-size: 1.1em; min-width: 110px; }
+    #entryScreen, #waitingRoomScreen, #questionScreen, #resultsScreen, .modal-content { padding: 25px 20px; border-radius: 12px;}
+    #questionScreen #questionText { font-size: 1.4em; margin-top: 40px;}
+    .question-number { top: 12px; left: 15px; font-size: 1.1em;}
+    .results-container { font-size: 2em; gap: 15px;}
+    #roomCodeInput { max-width: 240px; }
+    #joinRoomBtn, #createRoomBtn, #startGameBtn, #nextQuestionBtn { min-width: 150px; }
 }

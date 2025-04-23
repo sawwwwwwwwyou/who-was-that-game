@@ -599,10 +599,8 @@ socket.on('submitVote', (data) => {
 // =========================
 // --- ИГРОВЫЕ ФУНКЦИИ ---
 // =========================
-// Функция для получения текущего состояния игры для отправки клиенту
 
-// Функция для получения текущего состояния игры для отправки клиенту
-function getCurrentGameState(roomCode, playerId) { // playerId передается для поиска голоса
+function getCurrentGameState(roomCode, playerId) { // playerId нужен для получения myVote
     const room = rooms[roomCode];
     if (!room) return { state: 'finished' }; // Если комнаты нет, считаем игру законченной
 
@@ -611,33 +609,35 @@ function getCurrentGameState(roomCode, playerId) { // playerId передает�
         // Дополнительные поля будут добавлены ниже
     };
 
+    // Если игра идет (вопрос) или только что показали результаты
     if (room.state === 'question' || room.state === 'results') {
         const questionIndex = room.currentQuestionIndex;
+        // Получаем вопрос из списка этой комнаты
         const question = (room.shuffledQuestions && questionIndex >= 0 && questionIndex < room.shuffledQuestions.length)
                      ? room.shuffledQuestions[questionIndex]
                      : null;
 
-        baseState.questionNumber = questionIndex + 1;
+        // --- Используем ID из JSON ---
+        baseState.questionId = question ? question.id : null; // <<< Получаем и добавляем ID из JSON
+        // baseState.questionNumber = questionIndex + 1; // Порядковый номер больше не нужен клиенту здесь
         baseState.questionText = question ? question.text : "Question loading error";
+        // --- Конец использования ID из JSON ---
+
 
         if (room.state === 'question') {
             // Рассчитываем оставшееся время
             let durationLeft = VOTE_DURATION_SECONDS;
-            if (room.timer && room.timer.startTime) {
+            if (room.timer && room.timer.startTime) { // Используем сохраненное время старта
                const elapsed = (Date.now() - room.timer.startTime) / 1000;
                durationLeft = Math.max(0, Math.round(VOTE_DURATION_SECONDS - elapsed));
             }
             baseState.durationLeft = durationLeft;
 
-            // --- ДОБАВЛЕНИЕ: Логирование поиска голоса ---
-            // Ищем голос по ПЕРЕДАННОМУ playerId
+            // Получаем голос конкретного игрока по его playerId
             const playersVote = room.votes[playerId]; // Ищем голос по playerId
-            console.log(`[GetGameState] Для playerId ${playerId} в комнате ${roomCode} найден голос: ${playersVote === undefined ? 'undefined' : playersVote}. Все голоса в комнате:`, JSON.stringify(room.votes)); // <<< ЛОГ ПРОВЕРКИ ГОЛОСА
             baseState.myVote = playersVote === undefined ? null : playersVote; // Отправляем 'yes', 'no' или null
-            // --- КОНЕЦ ДОБАВЛЕНИЯ ---
-
         } else if (room.state === 'results') {
-            // Собираем результаты (ключи в room.votes УЖЕ playerId)
+            // Собираем результаты (ключи в room.votes - это playerId)
             let yesVotes = 0;
             let noVotes = 0;
             Object.values(room.votes || {}).forEach(vote => {
@@ -645,6 +645,9 @@ function getCurrentGameState(roomCode, playerId) { // playerId передает�
                 else if (vote === 'no') noVotes++;
             });
             baseState.results = { yesVotes, noVotes };
+             // Добавляем голос игрока и для экрана результатов, чтобы клиент мог его использовать при реконнекте
+             const playersVote = room.votes[playerId];
+             baseState.myVote = playersVote === undefined ? null : playersVote;
         }
     }
     // Для 'waiting' или 'finished' дополнительных полей не нужно
@@ -653,22 +656,20 @@ function getCurrentGameState(roomCode, playerId) { // playerId передает�
 }
 
 // --- Функция отправки следующего вопроса ---
-// --- Функция отправки следующего вопроса ---
+
 function sendNextQuestion(roomCode) {
     const room = rooms[roomCode];
     if (!room) {
         console.error(`[Send Question Error] Попытка отправить вопрос в несуществующую комнату ${roomCode}`);
         return;
     }
-     // Дополнительная проверка на случай, если вопросы не были перемешаны при старте
     if (!room.shuffledQuestions || room.shuffledQuestions.length === 0) {
         console.error(`[Send Question Error] В комнате ${roomCode} нет списка вопросов для отправки.`);
         endGame(roomCode, "Internal error: questions list missing.");
         return;
     }
 
-    // Увеличиваем индекс вопроса для комнаты
-    room.currentQuestionIndex++;
+    room.currentQuestionIndex++; // Увеличиваем индекс вопроса для комнаты
 
     // Проверяем, закончились ли вопросы в перемешанном списке этой комнаты
     if (room.currentQuestionIndex >= room.shuffledQuestions.length) {
@@ -677,87 +678,98 @@ function sendNextQuestion(roomCode) {
         return;
     }
 
-    // Получаем текущий вопрос из УНИКАЛЬНОГО списка этой комнаты
+    // Получаем ТЕКУЩИЙ вопрос из УНИКАЛЬНОГО списка этой комнаты
     const question = room.shuffledQuestions[room.currentQuestionIndex];
+    if (!question || typeof question.text === 'undefined' || typeof question.id === 'undefined') { // Добавлена проверка на наличие text и id
+        console.error(`[Send Question Error] Некорректный объект вопроса для индекса ${room.currentQuestionIndex} в комнате ${roomCode}:`, question);
+        endGame(roomCode, "Internal error retrieving question data.");
+        return;
+    }
+
     room.state = 'question'; // Переводим комнату в состояние "идет вопрос"
     room.votes = {};         // Очищаем голоса предыдущего раунда
 
-    const questionNumber = room.currentQuestionIndex + 1; // Номер вопроса в текущей сессии
+    // --- Используем ID из JSON ---
+    const questionId = question.id;       // Получаем ID из объекта вопроса
+    const questionText = question.text;   // Получаем текст
+    const sessionQuestionNumber = room.currentQuestionIndex + 1; // Порядковый номер для логов сервера
+    // --- Конец использования ID из JSON ---
 
-    console.log(`[Send Question] Комната ${roomCode}: Отправка вопроса ${questionNumber} ("${question.text}")`);
+    console.log(`[Send Question] Комната ${roomCode}: Отправка вопроса (ID: ${questionId}, Порядковый в сессии: ${sessionQuestionNumber}) Текст: "${questionText}"`);
 
-    // Отправляем событие 'newQuestion' всем клиентам в комнате
+    // Отправляем событие 'newQuestion' всем клиентам в комнате с ID из JSON
     io.to(roomCode).emit('newQuestion', {
-        questionNumber: questionNumber,
-        questionText: question.text,
+        // questionNumber: sessionQuestionNumber, // Старый порядковый номер больше не отправляем клиенту для этого
+        questionId: questionId,       // <<< ОТПРАВЛЯЕМ ID ИЗ JSON
+        questionText: questionText,
         duration: VOTE_DURATION_SECONDS
     });
 
     // Запускаем таймер на сервере (останавливаем предыдущий, если был)
     if (room.timer) clearTimeout(room.timer);
-
-    const timerStartTime = Date.now(); // <<< Запоминаем время старта таймера
-
+    const timerStartTime = Date.now();
     room.timer = setTimeout(() => {
-        // Проверяем, что комната все еще существует и в нужном состоянии перед показом результатов по таймеру
-        const currentRoom = rooms[roomCode];
+        const currentRoom = rooms[roomCode]; // Перепроверяем комнату
         if(currentRoom && currentRoom.state === 'question') {
-             console.log(`[Timer Expired] Время для ответа на вопрос ${questionNumber} в комнате ${roomCode} вышло.`);
-             if (currentRoom.timer) currentRoom.timer.startTime = null; // Очищаем время старта при срабатывании
-             showResults(roomCode); // Показываем результаты по истечении времени
+             console.log(`[Timer Expired] Время для ответа на вопрос (ID: ${questionId}) в ${roomCode} вышло.`);
+             if (currentRoom.timer) currentRoom.timer.startTime = null;
+             showResults(roomCode);
         } else {
-             console.log(`[Timer Expired] Таймер для вопроса ${questionNumber} в комнате ${roomCode} сработал, но комната уже не в состоянии 'question' (state: ${currentRoom?.state}). Результаты не показываем.`);
-             // Очищаем startTime на всякий случай
-              if (currentRoom && currentRoom.timer) currentRoom.timer.startTime = null;
+             console.log(`[Timer Expired] Таймер для вопроса (ID: ${questionId}) в ${roomCode} сработал, но комната не в состоянии 'question'.`);
+             if (currentRoom && currentRoom.timer) currentRoom.timer.startTime = null;
         }
     }, VOTE_DURATION_SECONDS * 1000);
-
-    room.timer.startTime = timerStartTime; // <<< Сохраняем время старта в объект таймера
+    room.timer.startTime = timerStartTime; // Сохраняем время старта
 }
 
 // --- Функция показа результатов ---
+// --- Функция показа результатов ---
 function showResults(roomCode) {
     const room = rooms[roomCode];
-    // Проверяем, что комната существует и находится в нужном состоянии
     if (!room || room.state !== 'question') {
-        // console.log(`[Show Results] Пропуск для ${roomCode}: комната не найдена или не в состоянии вопроса (state: ${room?.state}).`);
         return; // Не показываем результаты, если состояние неверное
     }
 
-
-    // Останавливаем таймер (если он еще активен, например, все проголосовали досрочно)
-    if (room.timer) {
+    if (room.timer) { // Останавливаем таймер
         clearTimeout(room.timer);
+        room.timer.startTime = null; // Сбрасываем время старта, т.к. таймер остановлен
         room.timer = null;
     }
 
-    room.state = 'results'; // Переводим комнату в состояние "показ результатов"
+    room.state = 'results'; // Устанавливаем состояние "показ результатов"
 
-    // Подсчитываем голоса
+    // Подсчитываем голоса (ключи - playerId)
     let yesVotes = 0;
     let noVotes = 0;
-    const currentVotes = room.votes || {}; // Голоса этого раунда
+    const currentVotes = room.votes || {};
     Object.values(currentVotes).forEach(vote => {
         if (vote === 'yes') yesVotes++;
         else if (vote === 'no') noVotes++;
     });
 
-    // Получаем текст вопроса из списка этой комнаты
+    // Получаем данные текущего вопроса (из списка комнаты)
     const questionIndex = room.currentQuestionIndex;
     const question = (room.shuffledQuestions && questionIndex >= 0 && questionIndex < room.shuffledQuestions.length)
                      ? room.shuffledQuestions[questionIndex]
-                     : null; // На случай ошибки получаем null
+                     : null;
 
-    const questionNumber = questionIndex + 1;
-    console.log(`[Show Results] Комната ${roomCode}, Вопрос ${questionNumber}: Показ результатов - ДА: ${yesVotes}, НЕТ: ${noVotes}`);
+    // --- Используем ID из JSON ---
+    const questionId = question ? question.id : null; // Получаем ID из JSON
+    const sessionQuestionNumber = questionIndex + 1; // Порядковый для логов
+    // --- Конец использования ID ---
 
-    // Отправляем результаты всем клиентам в комнате
+    console.log(`[Show Results] Комната ${roomCode}, Вопрос (ID: ${questionId}, Порядковый: ${sessionQuestionNumber}): Показ результатов - ДА: ${yesVotes}, НЕТ: ${noVotes}`);
+
+    // Отправляем результаты всем клиентам в комнате, включая ID вопроса из JSON
     io.to(roomCode).emit('showResults', {
         yesVotes,
         noVotes,
-        questionText: question ? question.text : "Error: Question text not found" // Отправляем текст вопроса для контекста
+        questionText: question ? question.text : "Error: Question text not found",
+        // questionNumber: sessionQuestionNumber, // Старый порядковый номер больше не нужен клиенту
+        questionId: questionId // <<< ДОБАВЛЯЕМ ID ИЗ JSON
     });
 }
+
 
 // --- Функция проверки, все ли проголосовали ---
 function checkAllVoted(roomCode) {
