@@ -2,7 +2,7 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
-const fs = require('fs'); // Модуль для работы с файловой системой
+const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 
 // --- Инициализация Express и Socket.IO ---
@@ -27,7 +27,7 @@ try {
     if (!Array.isArray(allQuestions) || allQuestions.length === 0) {
         console.warn("[Server Start] ВНИМАНИЕ: Файл questions.json пуст, не является массивом или не содержит вопросов!");
         // Используем запасной вопрос, чтобы сервер мог запуститься
-        allQuestions = [{ text: "Ошибка: Не удалось загрузить вопросы из файла." }];
+        allQuestions = [{ id: 1, text: "Ошибка: Не удалось загрузить вопросы из файла." }];
     }
 } catch (error) {
     console.error("[Server Start] КРИТИЧЕСКАЯ ОШИБКА при загрузке questions.json:", error.message);
@@ -37,7 +37,8 @@ try {
 }
 
 // --- Константы игры ---
-const VOTE_DURATION_SECONDS = 10; // Время на голосование в секундах
+const VOTE_DURATION_SECONDS = 30; // Увеличенное время на голосование - опционально
+const USE_TIMER = false; // Установите в false, чтобы отключить таймер
 
 // ==============================
 // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
@@ -73,11 +74,22 @@ function broadcastPlayerList(roomCode) {
         const currentHostId = room.hostId; // Получаем ID текущего хоста
         // Отправляем id (socket.id), name, playerId И hostId
         const players = room.players.map(p => ({ id: p.id, name: p.name, playerId: p.playerId }));
+        
+        // Добавляем информацию о текущем голосовании, если игра в процессе
+        let votingStatus = null;
+        if (room.state === 'question') {
+            const votesReceived = Object.keys(room.votes || {}).length;
+            const totalPlayers = room.players.length;
+            votingStatus = { votes: votesReceived, total: totalPlayers };
+        }
+        
         io.to(roomCode).emit('updatePlayerList', { // Отправляем объект
             players: players,
-            hostId: currentHostId // Добавляем ID хоста
+            hostId: currentHostId, // Добавляем ID хоста
+            votingStatus: votingStatus // Добавляем статус голосования
         });
-         console.log(`[Broadcast] Обновлен список для ${roomCode}. Хост: ${currentHostId}`);
+        
+        console.log(`[Broadcast] Обновлен список для ${roomCode}. Хост: ${currentHostId}, Статус голосования: ${JSON.stringify(votingStatus)}`);
     }
 }
 
@@ -89,6 +101,7 @@ function findRoomBySocketId(socketId) {
     if (!entry) console.log(`[Debug] Не найдена комната для socketId: ${socketId}`); // Раскомментируй для отладки
     return entry;
 }
+
 // Поиск комнаты и игрока по playerId
 // Возвращает { roomCode, room, player } или null
 function findPlayerByPlayerId(playerId) {
@@ -103,6 +116,31 @@ function findPlayerByPlayerId(playerId) {
     return null; // Не нашли ни в одной комнате
 }
 
+// Поиск игрока по имени в комнате
+// Возвращает игрока или null
+function findPlayerByNameInRoom(roomCode, playerName) {
+    const room = rooms[roomCode];
+    if (!room || !room.players) return null;
+    
+    return room.players.find(p => p.name.toLowerCase() === playerName.toLowerCase());
+}
+
+// Обновление статуса голосования для всех в комнате
+function broadcastVotingStatus(roomCode) {
+    const room = rooms[roomCode];
+    if (!room || room.state !== 'question') return;
+    
+    const votesReceived = Object.keys(room.votes || {}).length;
+    const totalPlayers = room.players.length;
+    
+    io.to(roomCode).emit('votingStatus', { 
+        votes: votesReceived, 
+        total: totalPlayers 
+    });
+    
+    console.log(`[Voting Status] Комната ${roomCode}: ${votesReceived}/${totalPlayers} проголосовали`);
+}
+
 // ==================================
 // --- ОБРАБОТКА СОБЫТИЙ SOCKET.IO ---
 // ==================================
@@ -112,251 +150,333 @@ io.on('connection', (socket) => {
 
     // --- Обработка СОЗДАНИЯ Комнаты ---
     socket.on('createRoom', (data) => {
-    const playerName = data.name ? String(data.name).trim() : `User_${socket.id.substring(0,4)}`;
-    const roomCode = generateRoomCode();
-    const newPlayerId = uuidv4(); // <<< Генерируем ID для создателя
+        const playerName = data.name ? String(data.name).trim() : `User_${socket.id.substring(0,4)}`;
+        const roomCode = generateRoomCode();
+        const newPlayerId = uuidv4(); // Генерируем ID для создателя
 
-    rooms[roomCode] = {
-        hostId: socket.id,
-        // Добавляем playerId к первому игроку (хосту)
-        players: [{ id: socket.id, name: playerName, playerId: newPlayerId }], // <<< Добавили playerId
-        shuffledQuestions: [],
-        currentQuestionIndex: -1,
-        votes: {},
-        state: 'waiting',
-        timer: null,
-        // Добавим место для хранения таймеров отключения
-        disconnectTimers: {} // { playerId: setTimeoutInstance }
-    };
+        rooms[roomCode] = {
+            hostId: socket.id,
+            players: [{ id: socket.id, name: playerName, playerId: newPlayerId }], // Добавили playerId
+            shuffledQuestions: [],
+            currentQuestionIndex: -1,
+            votes: {},
+            state: 'waiting',
+            timer: null,
+            disconnectTimers: {}, // { playerId: setTimeoutInstance }
+            hideTimer: !USE_TIMER // Новое поле для отключения таймера
+        };
 
-    socket.join(roomCode);
-    console.log(`[Room Created] Игрок ${playerName} (playerId: ${newPlayerId}, socketId: ${socket.id}) создал комнату ${roomCode}`);
+        socket.join(roomCode);
+        console.log(`[Room Created] Игрок ${playerName} (playerId: ${newPlayerId}, socketId: ${socket.id}) создал комнату ${roomCode}`);
 
-    // Отправляем playerId клиенту
-    socket.emit('roomJoined', {
-    roomCode: roomCode,
-    players: rooms[roomCode].players.map(p => ({ id: p.id, name: p.name, playerId: p.playerId })), // Отправляем полный список
-    isHost: true,
-    playerId: newPlayerId,
-    hostId: socket.id // <<< Добавляем ID хоста (это он сам)
-});
-});
+        // Отправляем playerId клиенту
+        socket.emit('roomJoined', {
+            roomCode: roomCode,
+            players: rooms[roomCode].players.map(p => ({ id: p.id, name: p.name, playerId: p.playerId })),
+            isHost: true,
+            playerId: newPlayerId,
+            hostId: socket.id,
+            playerName: playerName // Сохраняем имя для использования при повторном входе
+        });
+    });
 
-// --- Обработка ЯВНОГО ВЫХОДА из комнаты ---
-socket.on('leaveRoom', () => {
-    console.log(`[Leave Room] Запрос на выход от ${socket.id}`);
-    const roomEntry = findRoomBySocketId(socket.id);
+    // --- Обработка ЯВНОГО ВЫХОДА из комнаты ---
+    socket.on('leaveRoom', () => {
+        console.log(`[Leave Room] Запрос на выход от ${socket.id}`);
+        const roomEntry = findRoomBySocketId(socket.id);
 
-    if (roomEntry) {
-        const [roomCode, room] = roomEntry;
+        if (roomEntry) {
+            const [roomCode, room] = roomEntry;
 
-        // Игнорируем, если комната уже завершена
-        if (room.state === 'finished') {
-             console.log(`[Leave Room] Игрок ${socket.id} пытается выйти из уже завершенной комнаты ${roomCode}.`);
-             return;
-        }
+            // Игнорируем, если комната уже завершена
+            if (room.state === 'finished') {
+                console.log(`[Leave Room] Игрок ${socket.id} пытается выйти из уже завершенной комнаты ${roomCode}.`);
+                return;
+            }
 
-        const playerIndex = room.players.findIndex(p => p.id === socket.id);
-        if (playerIndex === -1) {
-             console.log(`[Leave Room] Игрок ${socket.id} не найден в комнате ${roomCode} при попытке выхода.`);
-             return; // Игрока уже нет
-        }
+            const playerIndex = room.players.findIndex(p => p.id === socket.id);
+            if (playerIndex === -1) {
+                console.log(`[Leave Room] Игрок ${socket.id} не найден в комнате ${roomCode} при попытке выхода.`);
+                return; // Игрока уже нет
+            }
 
-        const player = room.players[playerIndex];
-        const playerId = player.playerId;
-        const playerName = player.name;
-        const wasHost = room.hostId === socket.id;
+            const player = room.players[playerIndex];
+            const playerId = player.playerId;
+            const playerName = player.name;
+            const wasHost = room.hostId === socket.id;
 
-        console.log(`[Player Left Explicitly] Игрок ${playerName} (playerId: ${playerId}, socketId: ${socket.id}) покидает комнату ${roomCode}`);
+            console.log(`[Player Left Explicitly] Игрок ${playerName} (playerId: ${playerId}, socketId: ${socket.id}) покидает комнату ${roomCode}`);
 
-        // Отменяем таймер неактивности, если он был запущен для этого игрока
-         if (room.disconnectTimers && room.disconnectTimers[playerId]) {
-             clearTimeout(room.disconnectTimers[playerId]);
-             delete room.disconnectTimers[playerId];
-             console.log(`[Leave Room] Таймер неактивности для ${playerId} отменен.`);
-         }
+            // Отменяем таймер неактивности, если он был запущен для этого игрока
+            if (room.disconnectTimers && room.disconnectTimers[playerId]) {
+                clearTimeout(room.disconnectTimers[playerId]);
+                delete room.disconnectTimers[playerId];
+                console.log(`[Leave Room] Таймер неактивности для ${playerId} отменен.`);
+                }
 
-        // Удаляем игрока из списка СРАЗУ
-        room.players.splice(playerIndex, 1);
-        delete room.votes[playerId]; // Удаляем его голос
+            // Удаляем игрока из списка СРАЗУ
+            room.players.splice(playerIndex, 1);
+            delete room.votes[playerId]; // Удаляем его голос
 
-        // Проверяем, остался ли кто-то
-        if (room.players.length === 0) {
-            console.log(`[Room Empty] Комната ${roomCode} пуста после выхода игрока ${playerName}. Завершаем игру.`);
-            endGame(roomCode, "Last player left the room.");
-        } else {
-            // Если ушел хост, назначаем нового
-            if (wasHost) {
-                console.log(`[Host Left Explicitly] Хост ${playerName} покинул комнату ${roomCode}. Назначаем нового.`);
-                room.hostId = room.players[0].id; // Назначаем первого оставшегося
-                io.to(room.hostId).emit('youAreHostNow');
-                 // Обновляем список у всех (важно после смены хоста)
-                broadcastPlayerList(roomCode);
+            // Проверяем, остался ли кто-то
+            if (room.players.length === 0) {
+                console.log(`[Room Empty] Комната ${roomCode} пуста после выхода игрока ${playerName}. Завершаем игру.`);
+                endGame(roomCode, "Last player left the room.");
             } else {
-                 // Если ушел не хост, просто обновляем список у оставшихся
-                 broadcastPlayerList(roomCode);
-            }
+                // Если ушел хост, назначаем нового
+                if (wasHost) {
+                    console.log(`[Host Left Explicitly] Хост ${playerName} покинул комнату ${roomCode}. Назначаем нового.`);
+                    room.hostId = room.players[0].id; // Назначаем первого оставшегося
+                    io.to(room.hostId).emit('youAreHostNow');
+                    // Обновляем список у всех (важно после смены хоста)
+                    broadcastPlayerList(roomCode);
+                } else {
+                    // Если ушел не хост, просто обновляем список у оставшихся
+                    broadcastPlayerList(roomCode);
+                }
 
-            // Если шел вопрос, проверяем голосование
-            if (room.state === 'question') {
-                checkAllVoted(roomCode);
+                // Если шел вопрос, проверяем голосование
+                if (room.state === 'question') {
+                    checkAllVoted(roomCode);
+                    // Обновляем статус голосования
+                    broadcastVotingStatus(roomCode);
+                }
             }
+        } else {
+            console.log(`[Leave Room] Игрок ${socket.id}, запросивший выход, не найден ни в одной комнате.`);
         }
-    } else {
-        console.log(`[Leave Room] Игрок ${socket.id}, запросивший выход, не найден ни в одной комнате.`);
-    }
-    // Явно отсоединяем сокет от комнаты на сервере (хотя клиент и так уходит)
-    // socket.leave(roomCode); // Это может быть излишним, т.к. клиент сам уходит на главный экран
-});
+    });
 
     // --- Проверка существования комнаты (перед вводом имени) ---
-     socket.on('checkRoomExists', (data) => {
+    socket.on('checkRoomExists', (data) => {
         const roomCode = data.roomCode ? String(data.roomCode).toUpperCase() : null;
         if (!roomCode) return; // Игнорируем пустой запрос
 
         const room = rooms[roomCode];
-        if (room && room.state === 'waiting') { // Проверяем, что комната существует И ожидает игроков
-            console.log(`[Room Check] Комната ${roomCode} существует и доступна. Отправка подтверждения клиенту ${socket.id}`);
-            socket.emit('roomExists'); // Комната найдена и готова к присоединению
-        } else if (room) {
-             console.log(`[Room Check] Комната ${roomCode} найдена, но игра уже идет или завершена (состояние: ${room.state}). Отправка ошибки клиенту ${socket.id}`);
-             socket.emit('errorMessage', `Game in room ${roomCode} is already in progress or finished.`);
-        }
-        else {
+        if (!room) {
             console.log(`[Room Check] Комната ${roomCode} не найдена. Отправка ошибки клиенту ${socket.id}`);
             socket.emit('errorMessage', `Room ${roomCode} not found.`);
+            return;
+        }
+        
+        // Комната существует, проверяем её состояние
+        if (room.state === 'waiting') {
+            // Комната в режиме ожидания, разрешаем вход
+            console.log(`[Room Check] Комната ${roomCode} существует и доступна. Отправка подтверждения клиенту ${socket.id}`);
+            socket.emit('roomExists');
+        } else if (room.state === 'question' || room.state === 'results') {
+            // Игра уже идет, проверяем был ли игрок в этой комнате ранее по ID сессии
+            // или позволяем присоединиться как новому игроку
+            console.log(`[Room Check] Комната ${roomCode} активна (состояние: ${room.state}). Проверяем возможность входа для ${socket.id}`);
+            
+            // Отправляем информацию о том, что комната активна
+            // Клиент сам решит, хочет ли попробовать войти
+            socket.emit('canJoinActiveRoom', {
+                roomCode: roomCode,
+                state: room.state
+            });
+        } else {
+            // Игра завершена или в другом состоянии
+            console.log(`[Room Check] Комната ${roomCode} найдена, но игра уже завершена или в необычном состоянии (${room.state}). Отправка ошибки клиенту ${socket.id}`);
+            socket.emit('errorMessage', `Game in room ${roomCode} is already finished or in an invalid state.`);
         }
     });
 
-
-    // --- Обработка ПРИСОЕДИНЕНИЯ к Комнате ---
-        // --- Обработка ПРИСОЕДИНЕНИЯ к Комнате (после ввода имени) ---
-    socket.on('joinRoom', (data) => {
-    console.log(`[Join Room Attempt] Получен запрос от ${socket.id} с данными:`, data); // <-- ЛОГ 1: Запрос получен?
-
-    const playerName = data.name ? String(data.name).trim() : `User_${socket.id.substring(0,4)}`;
-    const roomCode = data.roomCode ? String(data.roomCode).toUpperCase() : null;
-
-    if (!roomCode) {
-         console.warn(`[Join Room Error] Отсутствует roomCode у ${socket.id}`);
-         socket.emit('errorMessage', 'Room code is missing.');
-         return;
-    }
-    console.log(`[Join Room Attempt] Имя: ${playerName}, Код: ${roomCode}`); // <-- ЛОГ 2: Данные прочитаны
-
-    const room = rooms[roomCode];
-
-    if (!room || room.state !== 'waiting') {
-         socket.emit('errorMessage', `Room ${roomCode} is not available for joining right now.`);
-         console.warn(`[Join Room Error] Комната ${roomCode} недоступна. Существует: ${!!room}, Состояние: ${room?.state}`);
-         return;
-    }
-     console.log(`[Join Room Attempt] Комната ${roomCode} найдена и в состоянии waiting.`); // <-- ЛОГ 3: Комната ОК
-
-    if (room.players.some(player => player.name.toLowerCase() === playerName.toLowerCase())) {
-        socket.emit('errorMessage', `Name "${playerName}" is already taken in this room.`);
-        console.log(`[Join Room Error] Имя ${playerName} занято в ${roomCode}`);
-        return;
-    }
-    console.log(`[Join Room Attempt] Имя ${playerName} свободно.`); // <-- ЛОГ 4: Имя ОК
-
-    // ... (Опциональная проверка MAX_PLAYERS) ...
-
-    const newPlayerId = uuidv4();
-    room.players.push({ id: socket.id, name: playerName, playerId: newPlayerId });
-    socket.join(roomCode);
-    console.log(`[Player Joined] Игрок ${playerName} (playerId: ${newPlayerId}, socketId: ${socket.id}) добавлен в ${roomCode}.`); // <-- ЛОГ 5: Игрок добавлен
-
-    socket.emit('roomJoined', {
-    roomCode: roomCode,
-    players: room.players.map(p => ({ id: p.id, name: p.name, playerId: p.playerId })), // Отправляем полный список
-    isHost: false,
-    playerId: newPlayerId,
-    hostId: room.hostId // <<< Добавляем ID текущего хоста комнаты
-});
-     console.log(`[Join Room Attempt] Событие 'roomJoined' отправлено ${socket.id}`); // <-- ЛОГ 6: Подтверждение отправлено
-
-    broadcastPlayerList(roomCode); // <-- Оповещение остальных
-     console.log(`[Join Room Attempt] Список игроков разослан в ${roomCode}`); // <-- ЛОГ 7: Список разослан
-});
-
-// --- Обработка Попытки Переподключения ---
-// --- Обработка Попытки Переподключения ---
-socket.on('rejoinAttempt', (data) => {
-    const playerId = data.playerId ? String(data.playerId) : null;
-    const roomCode = data.roomCode ? String(data.roomCode).toUpperCase() : null;
-    console.log(`[Rejoin Attempt] От ${socket.id}: playerId=${playerId}, roomCode=${roomCode}`);
-
-    if (!playerId || !roomCode) {
-        console.warn(`[Rejoin Failed] Недостаточно данных от ${socket.id}`);
-        socket.emit('rejoinFailed', { message: 'Invalid rejoin data provided.' });
-        return;
-    }
-
-    const room = rooms[roomCode];
-    // Ищем индекс игрока с таким playerId ИМЕННО в запрошенной комнате
-    const playerIndex = room ? room.players.findIndex(p => p.playerId === playerId) : -1;
-
-    if (room && playerIndex !== -1) {
-        // --- Игрок найден в комнате ---
-        const player = room.players[playerIndex];
-        const oldSocketId = player.id; // Запоминаем старый ID на случай, если он был хостом
-        console.log(`[Rejoin] Найден игрок ${player.name} (playerId: ${playerId}). Старый socketId: ${oldSocketId}, Новый: ${socket.id}`);
-
-        // Обновляем socket.id игрока на новый
-        player.id = socket.id;
-        // Присоединяем новый сокет к комнате Socket.IO
+    // --- Обработка запроса на вход в активную комнату ---
+    socket.on('joinActiveRoom', (data) => {
+        const roomCode = data.roomCode ? String(data.roomCode).toUpperCase() : null;
+        const playerName = data.playerName ? String(data.playerName).trim() : `User_${socket.id.substring(0,4)}`;
+        
+        if (!roomCode) {
+            socket.emit('errorMessage', 'Missing room code');
+            return;
+        }
+        
+        const room = rooms[roomCode];
+        if (!room) {
+            socket.emit('errorMessage', `Room ${roomCode} no longer exists.`);
+            return;
+        }
+        
+        // Проверяем, может быть имя уже используется
+        if (findPlayerByNameInRoom(roomCode, playerName)) {
+            socket.emit('errorMessage', `Name "${playerName}" is already taken in this room.`);
+            return;
+        }
+        
+        // Присоединяем к комнате
+        const newPlayerId = uuidv4();
+        room.players.push({ id: socket.id, name: playerName, playerId: newPlayerId });
         socket.join(roomCode);
-
-        // --- Обновление статуса хоста ---
-        let isRejoiningClientHost = false; // Флаг для ответа клиенту
-        // Проверяем, был ли СТАРЫЙ сокет этого игрока хостом
-        if (room.hostId === oldSocketId) {
-            console.log(`[Rejoin] Игрок ${player.name} был хостом. Обновляем hostId на ${socket.id}.`);
-            room.hostId = socket.id; // Обновляем hostId на НОВЫЙ socket.id
-            isRejoiningClientHost = true;
-        } else {
-            // Иначе проверяем, является ли ТЕКУЩИЙ сокет (уже обновленный) хостом
-            // (на случай, если хост сменился, пока игрок был офлайн, и назначили именно его)
-            isRejoiningClientHost = (room.hostId === socket.id);
-            console.log(`[Rejoin] Игрок ${player.name} не был хостом (старый ID: ${oldSocketId}). Текущий хост: ${room.hostId}. Этот игрок хост: ${isRejoiningClientHost}`);
-        }
-        // --- Конец обновления статуса хоста ---
-
-
-        // Если для этого игрока был таймер отключения, удаляем его
-        if (room.disconnectTimers && room.disconnectTimers[playerId]) {
-            clearTimeout(room.disconnectTimers[playerId]);
-            delete room.disconnectTimers[playerId];
-            console.log(`[Rejoin] Таймер отключения для ${playerId} отменен.`);
-        }
-
-        // Отправляем обновленный список игроков всем в комнате
+        
+        console.log(`[Join Active Room] Игрок ${playerName} (${newPlayerId}) присоединился к активной комнате ${roomCode} в состоянии ${room.state}`);
+        
+        // Отправляем игроку подтверждение
+        socket.emit('roomJoined', {
+            roomCode: roomCode,
+            players: room.players.map(p => ({ id: p.id, name: p.name, playerId: p.playerId })),
+            isHost: false,
+            playerId: newPlayerId,
+            hostId: room.hostId,
+            playerName: playerName
+        });
+        
+        // Сохраняем в базовую игровую информацию, что игрок новый
+        room.newPlayers = room.newPlayers || new Set();
+        room.newPlayers.add(newPlayerId);
+        
+        // Обновляем список игроков у всех
         broadcastPlayerList(roomCode);
-
-        // Отправляем переподключившемуся игроку подтверждение и актуальное состояние игры
-        const currentGameState = getCurrentGameState(roomCode, playerId); // playerId нужен для получения myVote
+        
+        // Если игра уже идет, сразу отправляем текущее состояние
+        const gameState = getCurrentGameState(roomCode, newPlayerId);
         socket.emit('rejoinSuccess', {
             roomCode: roomCode,
             players: room.players.map(p => ({ id: p.id, name: p.name, playerId: p.playerId })),
-            isHost: isRejoiningClientHost, // Используем флаг, который мы только что определили
-            gameState: currentGameState
+            isHost: false,
+            gameState: gameState,
+            hostId: room.hostId
         });
+        
+        // Если идет вопрос, обновляем статус голосования
+        if (room.state === 'question') {
+            broadcastVotingStatus(roomCode);
+        }
+    });
 
-        console.log(`[Rejoin Success] Игроку ${player.name} (хост: ${isRejoiningClientHost}) отправлено состояние: ${currentGameState.state}`);
+    // --- Обработка ПРИСОЕДИНЕНИЯ к Комнате ---
+    socket.on('joinRoom', (data) => {
+        console.log(`[Join Room Attempt] Получен запрос от ${socket.id} с данными:`, data);
 
-    } else {
-        // --- Игрок не найден или комнаты нет ---
-         console.warn(`[Rejoin Failed] Игрок ${playerId} не найден в комнате ${roomCode} (Комната существует: ${!!room})`);
-         let message = `Could not rejoin room ${roomCode}. `;
-         if (!room) {
-             message += 'Room does not exist or has expired.';
-         } else {
-             message += 'You are not part of this game session or were removed due to inactivity.';
-         }
-         socket.emit('rejoinFailed', { message: message });
-    }
-});
+        const playerName = data.name ? String(data.name).trim() : `User_${socket.id.substring(0,4)}`;
+        const roomCode = data.roomCode ? String(data.roomCode).toUpperCase() : null;
+
+        if (!roomCode) {
+            console.warn(`[Join Room Error] Отсутствует roomCode у ${socket.id}`);
+            socket.emit('errorMessage', 'Room code is missing.');
+            return;
+        }
+        console.log(`[Join Room Attempt] Имя: ${playerName}, Код: ${roomCode}`);
+
+        const room = rooms[roomCode];
+
+        if (!room || room.state !== 'waiting') {
+            socket.emit('errorMessage', `Room ${roomCode} is not available for joining right now.`);
+            console.warn(`[Join Room Error] Комната ${roomCode} недоступна. Существует: ${!!room}, Состояние: ${room?.state}`);
+            return;
+        }
+        console.log(`[Join Room Attempt] Комната ${roomCode} найдена и в состоянии waiting.`);
+
+        if (room.players.some(player => player.name.toLowerCase() === playerName.toLowerCase())) {
+            socket.emit('errorMessage', `Name "${playerName}" is already taken in this room.`);
+            console.log(`[Join Room Error] Имя ${playerName} занято в ${roomCode}`);
+            return;
+        }
+        console.log(`[Join Room Attempt] Имя ${playerName} свободно.`);
+
+        // ... (Опциональная проверка MAX_PLAYERS) ...
+
+        const newPlayerId = uuidv4();
+        room.players.push({ id: socket.id, name: playerName, playerId: newPlayerId });
+        socket.join(roomCode);
+        console.log(`[Player Joined] Игрок ${playerName} (playerId: ${newPlayerId}, socketId: ${socket.id}) добавлен в ${roomCode}.`);
+
+        socket.emit('roomJoined', {
+            roomCode: roomCode,
+            players: room.players.map(p => ({ id: p.id, name: p.name, playerId: p.playerId })),
+            isHost: false,
+            playerId: newPlayerId,
+            hostId: room.hostId,
+            playerName: playerName // Сохраняем имя для повторного входа
+        });
+        console.log(`[Join Room Attempt] Событие 'roomJoined' отправлено ${socket.id}`);
+
+        broadcastPlayerList(roomCode);
+        console.log(`[Join Room Attempt] Список игроков разослан в ${roomCode}`);
+    });
+
+    // --- Обработка Попытки Переподключения ---
+    socket.on('rejoinAttempt', (data) => {
+        const playerId = data.playerId ? String(data.playerId) : null;
+        const roomCode = data.roomCode ? String(data.roomCode).toUpperCase() : null;
+        const playerName = data.playerName || null; // Получаем имя игрока, если оно есть
+        
+        console.log(`[Rejoin Attempt] От ${socket.id}: playerId=${playerId}, roomCode=${roomCode}, playerName=${playerName}`);
+
+        if (!playerId || !roomCode) {
+            console.warn(`[Rejoin Failed] Недостаточно данных от ${socket.id}`);
+            socket.emit('rejoinFailed', { message: 'Invalid rejoin data provided.' });
+            return;
+        }
+
+        const room = rooms[roomCode];
+        // Ищем индекс игрока с таким playerId ИМЕННО в запрошенной комнате
+        const playerIndex = room ? room.players.findIndex(p => p.playerId === playerId) : -1;
+
+        if (room && playerIndex !== -1) {
+            // --- Игрок найден в комнате ---
+            const player = room.players[playerIndex];
+            const oldSocketId = player.id; // Запоминаем старый ID на случай, если он был хостом
+            console.log(`[Rejoin] Найден игрок ${player.name} (playerId: ${playerId}). Старый socketId: ${oldSocketId}, Новый: ${socket.id}`);
+
+            // Обновляем socket.id игрока на новый
+            player.id = socket.id;
+            // Присоединяем новый сокет к комнате Socket.IO
+            socket.join(roomCode);
+
+            // --- Обновление статуса хоста ---
+            let isRejoiningClientHost = false; // Флаг для ответа клиенту
+            // Проверяем, был ли СТАРЫЙ сокет этого игрока хостом
+            if (room.hostId === oldSocketId) {
+                console.log(`[Rejoin] Игрок ${player.name} был хостом. Обновляем hostId на ${socket.id}.`);
+                room.hostId = socket.id; // Обновляем hostId на НОВЫЙ socket.id
+                isRejoiningClientHost = true;
+            } else {
+                // Иначе проверяем, является ли ТЕКУЩИЙ сокет (уже обновленный) хостом
+                isRejoiningClientHost = (room.hostId === socket.id);
+                console.log(`[Rejoin] Игрок ${player.name} не был хостом (старый ID: ${oldSocketId}). Текущий хост: ${room.hostId}. Этот игрок хост: ${isRejoiningClientHost}`);
+            }
+            // --- Конец обновления статуса хоста ---
+
+            // Если для этого игрока был таймер отключения, удаляем его
+            if (room.disconnectTimers && room.disconnectTimers[playerId]) {
+                clearTimeout(room.disconnectTimers[playerId]);
+                delete room.disconnectTimers[playerId];
+                console.log(`[Rejoin] Таймер отключения для ${playerId} отменен.`);
+            }
+
+            // Отправляем обновленный список игроков всем в комнате
+            broadcastPlayerList(roomCode);
+
+            // Отправляем переподключившемуся игроку подтверждение и актуальное состояние игры
+            const currentGameState = getCurrentGameState(roomCode, playerId); // playerId нужен для получения myVote
+            socket.emit('rejoinSuccess', {
+                roomCode: roomCode,
+                players: room.players.map(p => ({ id: p.id, name: p.name, playerId: p.playerId })),
+                isHost: isRejoiningClientHost, // Используем флаг, который мы только что определили
+                gameState: currentGameState,
+                hostId: room.hostId
+            });
+
+            // Обновляем статус голосования, если игра в процессе
+            if (room.state === 'question') {
+                broadcastVotingStatus(roomCode);
+            }
+
+            console.log(`[Rejoin Success] Игроку ${player.name} (хост: ${isRejoiningClientHost}) отправлено состояние: ${currentGameState.state}`);
+
+        } else {
+            // --- Игрок не найден или комнаты нет ---
+            console.warn(`[Rejoin Failed] Игрок ${playerId} не найден в комнате ${roomCode} (Комната существует: ${!!room})`);
+            let message = `Could not rejoin room ${roomCode}. `;
+            if (!room) {
+                message += 'Room does not exist or has expired.';
+            } else {
+                message += 'You are not part of this game session or were removed due to inactivity.';
+            }
+            socket.emit('rejoinFailed', { message: message });
+        }
+    });
 
     // --- Обработка НАЧАЛА ИГРЫ ---
     socket.on('startGame', () => {
@@ -397,79 +517,104 @@ socket.on('rejoinAttempt', (data) => {
         }
     });
 
-
     // --- Обработка ГОЛОСА от игрока ---
-    // --- Обработка ГОЛОСА от игрока ---
-socket.on('submitVote', (data) => {
-    const vote = data.vote; // 'yes' или 'no'
-    // console.log(`[Vote Received] От ${socket.id}: ${vote}`); // Базовый лог получения
+    socket.on('submitVote', (data) => {
+        const vote = data.vote; // 'yes' или 'no'
 
+        const roomEntry = findRoomBySocketId(socket.id);
+        if (!roomEntry) {
+            console.error(`[Vote Error] Комната для ${socket.id} не найдена при попытке голосования!`);
+            return;
+        }
+        const [roomCode, room] = roomEntry;
+
+        // Проверяем состояние комнаты и валидность голоса
+        if (room.state !== 'question' || (vote !== 'yes' && vote !== 'no')) {
+            console.warn(`[Vote Rejected] Неверное состояние (${room.state}) или голос (${vote}) от ${socket.id} в ${roomCode}`);
+            return;
+        }
+
+        // Используем playerId
+        const player = room.players.find(p => p.id === socket.id); // Находим объект игрока по socket.id
+        if (!player) { // Доп. проверка, если игрок не найден (маловероятно)
+             console.error(`[Vote Error] Не найден объект игрока для ${socket.id} в комнате ${roomCode}`);
+             return;
+        }
+        const playerId = player.playerId; // Получаем ПОСТОЯННЫЙ playerId
+        const playerName = player.name; // Получаем имя для лога
+
+        // Проверяем, не голосовал ли уже по playerId
+        if (room.votes[playerId] !== undefined) { // Проверяем голос по playerId
+            console.warn(`[Vote Rejected] Повторный голос от ${playerName} (playerId: ${playerId}) в ${roomCode}`);
+            return;
+        }
+
+        // Записываем голос по playerId
+        room.votes[playerId] = vote; // СОХРАНЯЕМ ГОЛОС ПО playerId
+        console.log(`[Vote Accepted] ${socket.id} (${playerName}) в ${roomCode} проголосовал: ${vote}. Голос сохранен для playerId: ${playerId}.`);
+        
+        // Обновляем статус голосования для всех клиентов
+        broadcastVotingStatus(roomCode);
+        
+        // Проверяем, все ли проголосовали
+        checkAllVoted(roomCode);
+    });
+
+    // --- Обработка запроса на ПРИНУДИТЕЛЬНЫЙ показ результатов от хоста ---
+    socket.on('forceShowResults', () => {
+        const roomEntry = findRoomBySocketId(socket.id);
+        if (!roomEntry) {
+            console.warn(`[Force Results Error] Игрок ${socket.id} попытался показать результаты, не находясь в комнате.`);
+            return;
+        }
+        const [roomCode, room] = roomEntry;
+
+        // Проверки: этот игрок - ведущий? Комната в процессе вопроса?
+        if (room.hostId !== socket.id) {
+            console.warn(`[Force Results Error] Игрок ${socket.id} попытался показать результаты в ${roomCode}, не будучи ведущим.`);
+            return;
+        }
+        if (room.state !== 'question') {
+            console.warn(`[Force Results Error] Попытка показать результаты в ${roomCode}, которая не в состоянии вопроса (state: ${room.state}).`);
+            return;
+        }
+
+        console.log(`[Force Results] Ведущий ${socket.id} запросил показ результатов в комнате ${roomCode}`);
+        showResults(roomCode); // Показываем результаты принудительно
+    });
+
+    // Обновите обработчик nextQuestion
+socket.on('nextQuestion', () => {
     const roomEntry = findRoomBySocketId(socket.id);
     if (!roomEntry) {
-        console.error(`[Vote Error] Комната для ${socket.id} не найдена при попытке голосования!`);
+        console.warn(`[Next Question Error] Игрок ${socket.id} не найден в комнате`);
         return;
     }
     const [roomCode, room] = roomEntry;
 
-    // Проверяем состояние комнаты и валидность голоса
-    if (room.state !== 'question' || (vote !== 'yes' && vote !== 'no')) {
-        console.warn(`[Vote Rejected] Неверное состояние (${room.state}) или голос (${vote}) от ${socket.id} в ${roomCode}`);
+    // Проверки: ведущий ли и в правильном ли состоянии комната
+    if (room.hostId !== socket.id) {
+        console.warn(`[Next Question Error] Игрок ${socket.id} запросил след. вопрос в ${roomCode}, не будучи ведущим.`);
+        return;
+    }
+    if (room.state !== 'results') {
+        console.warn(`[Next Question Error] Попытка запросить след. вопрос в ${roomCode} не из экрана результатов (state: ${room.state}).`);
         return;
     }
 
-    // --- ИЗМЕНЕНИЕ: Используем playerId ---
-    const player = room.players.find(p => p.id === socket.id); // Находим объект игрока по socket.id
-    if (!player) { // Доп. проверка, если игрок не найден (маловероятно)
-         console.error(`[Vote Error] Не найден объект игрока для ${socket.id} в комнате ${roomCode}`);
-         return;
-    }
-    const playerId = player.playerId; // <<< Получаем ПОСТОЯННЫЙ playerId
-    const playerName = player.name; // <<< Получаем имя для лога
-
-    // Проверяем, не голосовал ли уже по playerId
-    if (room.votes[playerId] !== undefined) { // <<< Проверяем голос по playerId
-        console.warn(`[Vote Rejected] Повторный голос от ${playerName} (playerId: ${playerId}) в ${roomCode}`);
-        return;
-    }
-
-    // Записываем голос по playerId
-    room.votes[playerId] = vote; // <<< СОХРАНЯЕМ ГОЛОС ПО playerId
-    // --- КОНЕЦ ИЗМЕНЕНИЯ ---
-
-    // --- ДОБАВЛЕНИЕ: Подробный лог ---
-    console.log(`[Vote Accepted] ${socket.id} (${playerName}) в ${roomCode} проголосовал: ${vote}. Голос сохранен для playerId: ${playerId}.`);
-    // Логируем ВСЕ текущие голоса в комнате (ключи - playerId)
-    console.log(`[Vote Accepted] Текущие голоса в ${roomCode}:`, JSON.stringify(room.votes)); // <<< ВАЖНЫЙ ЛОГ СОХРАНЕННЫХ ГОЛОСОВ
-    // --- КОНЕЦ ДОБАВЛЕНИЯ ---
-
-    // Проверяем, все ли проголосовали
-    checkAllVoted(roomCode);
+    console.log(`[Next Question] Ведущий ${socket.id} запросил следующий вопрос в комнате ${roomCode}`);
+    
+    // *** ВАЖНОЕ ИЗМЕНЕНИЕ: Полностью очищаем голоса перед отправкой следующего вопроса ***
+    room.votes = {};
+    console.log(`[Next Question] Объект votes очищен для комнаты ${roomCode}: ${JSON.stringify(room.votes)}`);
+    
+    // Небольшая задержка для синхронизации клиентов
+    setTimeout(() => {
+        sendNextQuestion(roomCode);
+    }, 200);
 });
 
-
-    // --- Обработка запроса на СЛЕДУЮЩИЙ ВОПРОС ---
-    socket.on('nextQuestion', () => {
-         const roomEntry = findRoomBySocketId(socket.id);
-         if (!roomEntry) return;
-         const [roomCode, room] = roomEntry;
-
-         // Проверки: ведущий ли и в правильном ли состоянии комната
-         if (room.hostId !== socket.id) {
-             console.warn(`[Next Question Error] Игрок ${socket.id} запросил след. вопрос в ${roomCode}, не будучи ведущим.`);
-             return;
-         }
-         if (room.state !== 'results') {
-             console.warn(`[Next Question Error] Попытка запросить след. вопрос в ${roomCode} не из экрана результатов (state: ${room.state}).`);
-             return;
-         }
-
-         console.log(`[Next Question] Ведущий ${socket.id} запросил следующий вопрос в комнате ${roomCode}`);
-         sendNextQuestion(roomCode); // Отправляем следующий вопрос
-    });
-
-
     // --- Обработка ОТКЛЮЧЕНИЯ пользователя ---
-        // --- Обработка ОТКЛЮЧЕНИЯ пользователя ---
     socket.on('disconnect', (reason) => {
         console.log(`[Disconnect] Пользователь ${socket.id} отключился. Причина: ${reason}`);
         const roomEntry = findRoomBySocketId(socket.id); // Ищем комнату по socket.id отключающегося
@@ -477,7 +622,7 @@ socket.on('submitVote', (data) => {
         if (roomEntry) {
             const [roomCode, room] = roomEntry;
 
-            // Игнорируем, если комната уже завершена (на всякий случай)
+            // Игнорируем, если комната уже завершена
             if (room.state === 'finished') {
                  console.log(`[Disconnect] Игрок ${socket.id} отключается от уже завершенной комнаты ${roomCode}.`);
                  return;
@@ -546,6 +691,7 @@ socket.on('submitVote', (data) => {
                                  // Если шел вопрос, проверяем голосование (т.к. кол-во игроков изменилось)
                                  if (currentRoom.state === 'question') {
                                      checkAllVoted(roomCode);
+                                     broadcastVotingStatus(roomCode);
                                  }
                              }
                          } else {
@@ -580,21 +726,18 @@ socket.on('submitVote', (data) => {
                      console.warn(`[Host Disconnected] Хост ${playerName} ушел, но не удалось найти нового хоста в ${roomCode} среди ${room.players.length} игроков.`);
                 }
             } else if (!wasHost && room.players.length > 0) {
-                 // Если ушел НЕ хост, можно опционально обновить список игроков сразу,
-                 // чтобы показать статус "отключен" (но мы этого пока не делаем, просто ждем таймера)
-                 // broadcastPlayerList(roomCode);
                  console.log(`[Player Disconnected] Игрок ${playerName} (не хост) отключился от ${roomCode}. Ждем таймера неактивности.`);
             }
-            // Мы НЕ вызываем checkAllVoted здесь при отключении НЕ хоста,
-            // т.к. игрок формально еще числится в комнате до срабатывания таймера.
-
+            
+            // Если игра в процессе, обновляем статус голосования
+            if (room.state === 'question') {
+                broadcastVotingStatus(roomCode);
+            }
         } else {
              console.log(`[Disconnect] Отключившийся игрок ${socket.id} не найден ни в одной активной комнате.`);
         }
     });
-
 }); // Конец io.on('connection', ...)
-
 
 // =========================
 // --- ИГРОВЫЕ ФУНКЦИИ ---
@@ -606,7 +749,7 @@ function getCurrentGameState(roomCode, playerId) { // playerId нужен для
 
     const baseState = {
         state: room.state,
-        // Дополнительные поля будут добавлены ниже
+        hideTimer: room.hideTimer || !USE_TIMER // Пересылаем настройку таймера
     };
 
     // Если игра идет (вопрос) или только что показали результаты
@@ -617,25 +760,29 @@ function getCurrentGameState(roomCode, playerId) { // playerId нужен для
                      ? room.shuffledQuestions[questionIndex]
                      : null;
 
-        // --- Используем ID из JSON ---
-        baseState.questionId = question ? question.id : null; // <<< Получаем и добавляем ID из JSON
-        // baseState.questionNumber = questionIndex + 1; // Порядковый номер больше не нужен клиенту здесь
+        // Используем ID из JSON
+        baseState.questionId = question ? question.id : null; // Получаем и добавляем ID из JSON
         baseState.questionText = question ? question.text : "Question loading error";
-        // --- Конец использования ID из JSON ---
-
 
         if (room.state === 'question') {
-            // Рассчитываем оставшееся время
-            let durationLeft = VOTE_DURATION_SECONDS;
-            if (room.timer && room.timer.startTime) { // Используем сохраненное время старта
-               const elapsed = (Date.now() - room.timer.startTime) / 1000;
-               durationLeft = Math.max(0, Math.round(VOTE_DURATION_SECONDS - elapsed));
+            // Рассчитываем оставшееся время, если таймер включен
+            if (!room.hideTimer && USE_TIMER) {
+                let durationLeft = VOTE_DURATION_SECONDS;
+                if (room.timer && room.timer.startTime) { // Используем сохраненное время старта
+                   const elapsed = (Date.now() - room.timer.startTime) / 1000;
+                   durationLeft = Math.max(0, Math.round(VOTE_DURATION_SECONDS - elapsed));
+                }
+                baseState.durationLeft = durationLeft;
             }
-            baseState.durationLeft = durationLeft;
 
             // Получаем голос конкретного игрока по его playerId
             const playersVote = room.votes[playerId]; // Ищем голос по playerId
             baseState.myVote = playersVote === undefined ? null : playersVote; // Отправляем 'yes', 'no' или null
+            
+            // Добавляем статистику голосования
+            const votesReceived = Object.keys(room.votes || {}).length;
+            const totalPlayers = room.players.length;
+            baseState.votingStatus = { votes: votesReceived, total: totalPlayers };
         } else if (room.state === 'results') {
             // Собираем результаты (ключи в room.votes - это playerId)
             let yesVotes = 0;
@@ -645,9 +792,9 @@ function getCurrentGameState(roomCode, playerId) { // playerId нужен для
                 else if (vote === 'no') noVotes++;
             });
             baseState.results = { yesVotes, noVotes };
-             // Добавляем голос игрока и для экрана результатов, чтобы клиент мог его использовать при реконнекте
-             const playersVote = room.votes[playerId];
-             baseState.myVote = playersVote === undefined ? null : playersVote;
+            // Добавляем голос игрока и для экрана результатов, чтобы клиент мог его использовать при реконнекте
+            const playersVote = room.votes[playerId];
+            baseState.myVote = playersVote === undefined ? null : playersVote;
         }
     }
     // Для 'waiting' или 'finished' дополнительных полей не нужно
@@ -656,7 +803,6 @@ function getCurrentGameState(roomCode, playerId) { // playerId нужен для
 }
 
 // --- Функция отправки следующего вопроса ---
-
 function sendNextQuestion(roomCode) {
     const room = rooms[roomCode];
     if (!room) {
@@ -680,7 +826,7 @@ function sendNextQuestion(roomCode) {
 
     // Получаем ТЕКУЩИЙ вопрос из УНИКАЛЬНОГО списка этой комнаты
     const question = room.shuffledQuestions[room.currentQuestionIndex];
-    if (!question || typeof question.text === 'undefined' || typeof question.id === 'undefined') { // Добавлена проверка на наличие text и id
+    if (!question || typeof question.text === 'undefined' || typeof question.id === 'undefined') {
         console.error(`[Send Question Error] Некорректный объект вопроса для индекса ${room.currentQuestionIndex} в комнате ${roomCode}:`, question);
         endGame(roomCode, "Internal error retrieving question data.");
         return;
@@ -689,105 +835,165 @@ function sendNextQuestion(roomCode) {
     room.state = 'question'; // Переводим комнату в состояние "идет вопрос"
     room.votes = {};         // Очищаем голоса предыдущего раунда
 
-    // --- Используем ID из JSON ---
+    // Используем ID из JSON
     const questionId = question.id;       // Получаем ID из объекта вопроса
     const questionText = question.text;   // Получаем текст
     const sessionQuestionNumber = room.currentQuestionIndex + 1; // Порядковый номер для логов сервера
-    // --- Конец использования ID из JSON ---
 
     console.log(`[Send Question] Комната ${roomCode}: Отправка вопроса (ID: ${questionId}, Порядковый в сессии: ${sessionQuestionNumber}) Текст: "${questionText}"`);
 
     // Отправляем событие 'newQuestion' всем клиентам в комнате с ID из JSON
     io.to(roomCode).emit('newQuestion', {
-        // questionNumber: sessionQuestionNumber, // Старый порядковый номер больше не отправляем клиенту для этого
-        questionId: questionId,       // <<< ОТПРАВЛЯЕМ ID ИЗ JSON
+        questionId: questionId,
         questionText: questionText,
-        duration: VOTE_DURATION_SECONDS
+        duration: VOTE_DURATION_SECONDS,
+        hideTimer: room.hideTimer || !USE_TIMER // Передаем флаг скрытия таймера
     });
 
-    // Запускаем таймер на сервере (останавливаем предыдущий, если был)
-    if (room.timer) clearTimeout(room.timer);
-    const timerStartTime = Date.now();
-    room.timer = setTimeout(() => {
-        const currentRoom = rooms[roomCode]; // Перепроверяем комнату
-        if(currentRoom && currentRoom.state === 'question') {
-             console.log(`[Timer Expired] Время для ответа на вопрос (ID: ${questionId}) в ${roomCode} вышло.`);
-             if (currentRoom.timer) currentRoom.timer.startTime = null;
-             showResults(roomCode);
-        } else {
-             console.log(`[Timer Expired] Таймер для вопроса (ID: ${questionId}) в ${roomCode} сработал, но комната не в состоянии 'question'.`);
-             if (currentRoom && currentRoom.timer) currentRoom.timer.startTime = null;
+    // Сбрасываем статус голосования и отправляем начальное значение
+    broadcastVotingStatus(roomCode);
+
+    // Запускаем таймер на сервере только если он включен
+    if (!room.hideTimer && USE_TIMER) {
+        if (room.timer) clearTimeout(room.timer);
+        const timerStartTime = Date.now();
+        room.timer = setTimeout(() => {
+            const currentRoom = rooms[roomCode]; // Перепроверяем комнату
+            if(currentRoom && currentRoom.state === 'question') {
+                 console.log(`[Timer Expired] Время для ответа на вопрос (ID: ${questionId}) в ${roomCode} вышло.`);
+                 if (currentRoom.timer) currentRoom.timer.startTime = null;
+                 showResults(roomCode);
+            } else {
+                 console.log(`[Timer Expired] Таймер для вопроса (ID: ${questionId}) в ${roomCode} сработал, но комната не в состоянии 'question'.`);
+                 if (currentRoom && currentRoom.timer) currentRoom.timer.startTime = null;
+            }
+        }, VOTE_DURATION_SECONDS * 1000);
+        room.timer.startTime = timerStartTime; // Сохраняем время старта
+    } else {
+        // Если таймер отключен, убедимся что предыдущие таймеры остановлены
+        if (room.timer) {
+            clearTimeout(room.timer);
+            room.timer = null;
         }
-    }, VOTE_DURATION_SECONDS * 1000);
-    room.timer.startTime = timerStartTime; // Сохраняем время старта
+    }
 }
 
 // --- Функция показа результатов ---
-// --- Функция показа результатов ---
+// Полностью замените функцию showResults в server.js
 function showResults(roomCode) {
     const room = rooms[roomCode];
-    if (!room || room.state !== 'question') {
-        return; // Не показываем результаты, если состояние неверное
+    if (!room) {
+        console.error(`[CRITICAL] Комната ${roomCode} не существует при попытке показать результаты!`);
+        return;
     }
-
-    if (room.timer) { // Останавливаем таймер
+    
+    if (room.state !== 'question') {
+        console.error(`[CRITICAL] Комната ${roomCode} в неверном состоянии '${room.state}' для показа результатов!`);
+        return;
+    }
+    
+    // Останавливаем таймер
+    if (room.timer) {
         clearTimeout(room.timer);
-        room.timer.startTime = null; // Сбрасываем время старта, т.к. таймер остановлен
         room.timer = null;
     }
-
-    room.state = 'results'; // Устанавливаем состояние "показ результатов"
-
-    // Подсчитываем голоса (ключи - playerId)
+    
+    // Меняем состояние
+    room.state = 'results';
+    
+    // Подсчитываем результаты заново, не доверяя предыдущим вычислениям
     let yesVotes = 0;
     let noVotes = 0;
-    const currentVotes = room.votes || {};
-    Object.values(currentVotes).forEach(vote => {
-        if (vote === 'yes') yesVotes++;
-        else if (vote === 'no') noVotes++;
-    });
-
-    // Получаем данные текущего вопроса (из списка комнаты)
-    const questionIndex = room.currentQuestionIndex;
-    const question = (room.shuffledQuestions && questionIndex >= 0 && questionIndex < room.shuffledQuestions.length)
-                     ? room.shuffledQuestions[questionIndex]
-                     : null;
-
-    // --- Используем ID из JSON ---
-    const questionId = question ? question.id : null; // Получаем ID из JSON
-    const sessionQuestionNumber = questionIndex + 1; // Порядковый для логов
-    // --- Конец использования ID ---
-
-    console.log(`[Show Results] Комната ${roomCode}, Вопрос (ID: ${questionId}, Порядковый: ${sessionQuestionNumber}): Показ результатов - ДА: ${yesVotes}, НЕТ: ${noVotes}`);
-
-    // Отправляем результаты всем клиентам в комнате, включая ID вопроса из JSON
-    io.to(roomCode).emit('showResults', {
-        yesVotes,
-        noVotes,
-        questionText: question ? question.text : "Error: Question text not found",
-        // questionNumber: sessionQuestionNumber, // Старый порядковый номер больше не нужен клиенту
-        questionId: questionId // <<< ДОБАВЛЯЕМ ID ИЗ JSON
-    });
+    
+    console.log(`[CRITICAL] Все голоса в комнате ${roomCode}:`, JSON.stringify(room.votes));
+    
+    // Явно итерируем по объекту голосов и считаем
+    if (room.votes) {
+        for (const [playerId, vote] of Object.entries(room.votes)) {
+            if (vote === 'yes') {
+                yesVotes++;
+            } else if (vote === 'no') {
+                noVotes++;
+            }
+        }
+    }
+    
+    console.log(`[CRITICAL] Подсчитано голосов в комнате ${roomCode}: YES=${yesVotes}, NO=${noVotes}`);
+    
+    // Получаем данные вопроса с проверками
+    let questionId = null;
+    let questionText = "Question text unavailable";
+    
+    try {
+        if (room.shuffledQuestions && 
+            room.currentQuestionIndex >= 0 && 
+            room.currentQuestionIndex < room.shuffledQuestions.length) {
+            
+            const question = room.shuffledQuestions[room.currentQuestionIndex];
+            if (question) {
+                questionId = question.id || room.currentQuestionIndex + 1;
+                questionText = question.text || "Question text unavailable";
+            }
+        }
+    } catch (error) {
+        console.error(`[CRITICAL] Ошибка при получении данных вопроса:`, error);
+    }
+    
+    // Создаем объект результатов
+    const resultsData = {
+        yesVotes: yesVotes,
+        noVotes: noVotes,
+        questionId: questionId,
+        questionText: questionText
+    };
+    
+    console.log(`[CRITICAL] Отправка результатов в комнату ${roomCode}:`, JSON.stringify(resultsData));
+    
+    // Отправляем результаты всем в комнате
+    io.to(roomCode).emit('showResults', resultsData);
+    
+    // Дополнительно отправляем каждому игроку индивидуально (для надежности)
+    if (room.players && room.players.length > 0) {
+        room.players.forEach(player => {
+            try {
+                console.log(`[CRITICAL] Отправка персональных результатов для ${player.name} (${player.id})`);
+                io.to(player.id).emit('showResults', resultsData);
+            } catch (error) {
+                console.error(`[CRITICAL] Ошибка отправки персональных результатов:`, error);
+            }
+        });
+    }
 }
-
 
 // --- Функция проверки, все ли проголосовали ---
 function checkAllVoted(roomCode) {
     const room = rooms[roomCode];
     // Проверяем, актуальна ли проверка (комната существует и ожидает голоса)
     if (!room || room.state !== 'question') {
-        // console.log(`[CheckAllVoted] Пропуск для ${roomCode}: комната не найдена или не в состоянии вопроса.`);
         return;
     }
 
     const playersInRoom = room.players.length;
-    const votesReceived = Object.keys(room.votes).length;
-    // console.log(`[CheckAllVoted] В ${roomCode}: ${votesReceived} голосов из ${playersInRoom} игроков.`); // Для отладки
+    
+    // Максимально надежный подсчет голосов
+    let votesReceived = 0;
+    if (room.votes) {
+        votesReceived = Object.keys(room.votes).length;
+    }
+
+    console.log(`[CheckAllVoted] В ${roomCode}: ${votesReceived}/${playersInRoom} игроков проголосовали.`);
 
     // Если все активные игроки проголосовали, показываем результаты досрочно
-    if (playersInRoom > 0 && votesReceived >= playersInRoom) { // Используем >= на случай гонки состояний
+    if (playersInRoom > 0 && votesReceived >= playersInRoom) {
         console.log(`[CheckAllVoted] Все (${votesReceived}/${playersInRoom}) в ${roomCode} проголосовали. Показ результатов.`);
-        showResults(roomCode); // Показываем результаты немедленно
+        
+        // Небольшая задержка для синхронизации клиентов
+        setTimeout(() => {
+            // Проверяем, что комната все еще существует и в правильном состоянии
+            if (rooms[roomCode] && rooms[roomCode].state === 'question') {
+                showResults(roomCode); // Показываем результаты
+            }
+        }, 500);
     }
 }
 
@@ -806,6 +1012,14 @@ function endGame(roomCode, message) {
     if (room.timer) {
         clearTimeout(room.timer);
         room.timer = null;
+    }
+
+    // Остановка всех таймеров отключения
+    if (room.disconnectTimers) {
+        Object.values(room.disconnectTimers).forEach(timer => {
+            if (timer) clearTimeout(timer);
+        });
+        room.disconnectTimers = {};
     }
 
     // Отправляем событие gameOver всем в комнате
