@@ -62,6 +62,7 @@ let timerInterval = null;
 let currentAction = null; // 'join' или 'create' - для модального окна
 let currentRoomCode = ''; // Сохраняем код комнаты при открытии модалки Join
 let hasVoted = false; // Новая переменная для отслеживания голосования
+let isExitingRoom = false;
 
 // --- Функции для переключения экранов ---
 function showScreen(screenToShow) {
@@ -197,6 +198,130 @@ function closeNameModal() {
     currentRoomCode = '';
 }
 
+// Новая функция для полной очистки состояния клиента
+function resetClientState() {
+    console.log('[RESET STATE] Полная очистка состояния клиента');
+    
+    // Сбрасываем глобальные переменные
+    amIHost = false;
+    currentHostId = null;
+    currentAction = null;
+    currentRoomCode = '';
+    hasVoted = false;
+    
+    // Останавливаем все таймеры
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+    
+    // Очищаем localStorage
+    try {
+        localStorage.removeItem('whoWasThat_playerId');
+        localStorage.removeItem('whoWasThat_roomCode');
+        localStorage.removeItem('whoWasThat_playerName');
+        console.log('[RESET STATE] localStorage очищен');
+    } catch (e) {
+        console.error('[RESET STATE] Ошибка очистки localStorage:', e);
+    }
+    
+    // Сбрасываем UI элементы
+    if (roomCodeInput) {
+        roomCodeInput.value = '';
+    }
+    if (joinRoomBtn) {
+        joinRoomBtn.disabled = true;
+    }
+    if (modalNameInput) {
+        modalNameInput.value = '';
+    }
+    if (modalConfirmBtn) {
+        modalConfirmBtn.disabled = true;
+    }
+    
+    // Скрываем все кнопки игры
+    if (startGameBtn) startGameBtn.style.display = 'none';
+    if (nextQuestionBtn) nextQuestionBtn.style.display = 'none';
+    if (showResultsBtn) showResultsBtn.style.display = 'none';
+    if (exitRoomBtn) exitRoomBtn.style.display = 'none';
+    
+    // Сбрасываем кнопки голосования
+    if (voteYesBtn) {
+        voteYesBtn.disabled = false;
+        voteYesBtn.classList.remove('selected-vote');
+    }
+    if (voteNoBtn) {
+        voteNoBtn.disabled = false;
+        voteNoBtn.classList.remove('selected-vote');
+    }
+    
+    // Очищаем списки и тексты
+    if (playerList) playerList.innerHTML = '';
+    if (roomCodeDisplay) roomCodeDisplay.textContent = '';
+    if (questionNumberDisplay) questionNumberDisplay.textContent = '#?';
+    if (questionText) questionText.textContent = '';
+    if (votingStatusText) votingStatusText.textContent = 'Voted: 0/0';
+    
+    // Сбрасываем результаты
+    const questionReminder = resultsScreen.querySelector('.question-reminder');
+    if (questionReminder) questionReminder.textContent = '';
+    
+    // Восстанавливаем структуру результатов
+    setTimeout(() => {
+        const resultsContainer = document.querySelector('#resultsScreen #resultsText');
+        if (resultsContainer) {
+            resultsContainer.innerHTML = `
+                <span class="results-yes">
+                    <span class="results-count-yes">0</span> Yes
+                </span>
+                <span class="results-no">
+                    <span class="results-count-no">0</span> No
+                </span>
+            `;
+        }
+    }, 100);
+    
+    // Закрываем все модальные окна
+    if (nameModal) nameModal.style.display = 'none';
+    if (confirmExitModal) confirmExitModal.style.display = 'none';
+    if (gameOverModal) gameOverModal.style.display = 'none';
+    if (infoModal) infoModal.style.display = 'none';
+    
+    // В функции resetClientState добавьте эти строки в конец (перед console.log):
+    
+    // Дополнительно убеждаемся, что отключены все обработчики игровых событий
+    isExitingRoom = false; // Сбрасываем флаг выхода
+    
+    console.log('[RESET STATE] Состояние клиента полностью сброшено');
+
+    console.log('[RESET STATE] Состояние клиента полностью сброшено');
+}
+
+function shouldIgnoreServerEvents() {
+    // Игнорируем события сервера, если мы находимся в процессе выхода или на главном экране
+    return isExitingRoom || (entryScreen && entryScreen.style.display !== 'none');
+}
+// Функция для проверки, принадлежим ли мы к указанной комнате
+function isInCurrentRoom(roomCode) {
+    return currentRoomCode && currentRoomCode === roomCode && currentRoomCode !== '';
+}
+
+// Функция для проверки, должны ли мы обрабатывать игровые события
+function shouldHandleGameEvent(data) {
+    // Игнорируем события, если мы вышли или не в комнате
+    if (shouldIgnoreServerEvents()) {
+        console.log('[EVENT FILTER] Событие игнорировано - пользователь вышел');
+        return false;
+    }
+    
+    // Если в данных есть roomCode, проверяем, что это наша комната
+    if (data && data.roomCode && !isInCurrentRoom(data.roomCode)) {
+        console.log(`[EVENT FILTER] Событие игнорировано - не наша комната (получено: ${data.roomCode}, текущая: ${currentRoomCode})`);
+        return false;
+    }
+    
+    return true;
+}
 // --- Обработчики событий Экрана Входа ---
 // Нажатие кнопки "OK" в модалке Info
 infoModalCloseBtn.addEventListener('click', () => {
@@ -316,60 +441,27 @@ cancelExitBtn.addEventListener('click', () => {
 
 // Нажатие "Yes, Leave" в модалке подтверждения
 confirmExitBtn.addEventListener('click', () => {
-    console.log('User confirmed exit. Emitting leaveRoom event.');
-    socket.emit('leaveRoom'); // Отправляем событие на сервер
-
-    // Очищаем данные сессии немедленно на клиенте
-    try {
-        localStorage.removeItem('whoWasThat_playerId');
-        localStorage.removeItem('whoWasThat_roomCode');
-        console.log('Session data cleared from localStorage on explicit leave.');
-    } catch (e) { console.error("Error clearing localStorage on leave:", e); }
-
-    // Сбрасываем состояние клиента
-    amIHost = false;
-    currentAction = null;
-    currentRoomCode = '';
-    hasVoted = false; // Сбрасываем флаг голосования
-    if (timerInterval) { // Останавливаем таймер, если был
-         clearInterval(timerInterval);
-         timerInterval = null;
-    }
-    // Сбрасываем кнопки и поля (можно вынести в отдельную функцию resetClientState)
-    roomCodeInput.value = '';
-    joinRoomBtn.disabled = true;
-    modalNameInput.value = '';
-    modalConfirmBtn.disabled = true;
-    startGameBtn.style.display = 'none';
-    nextQuestionBtn.style.display = 'none';
-    if (showResultsBtn) showResultsBtn.style.display = 'none';
-    voteYesBtn.disabled = false;
-    voteNoBtn.disabled = false;
-    playerList.innerHTML = '';
-    roomCodeDisplay.textContent = '';
-    questionNumberDisplay.textContent = '#?';
-    questionText.textContent = '';
-    resultsText.textContent = 'YES: 0, NO: 0';
-    const questionReminder = resultsScreen.querySelector('.question-reminder');
-    if (questionReminder) questionReminder.textContent = '';
-
-
-    closeConfirmExitModal(); // Закрываем модалку подтверждения
-    showScreen(entryScreen); // Показываем экран входа
-
+    console.log('[EXIT] Пользователь подтвердил выход. Отправка события leaveRoom.');
+    
+    // Устанавливаем флаг выхода
+    isExitingRoom = true;
+    
+    // Отправляем событие на сервер
+    socket.emit('leaveRoom');
+    
+    // Немедленно выполняем полную очистку состояния
+    resetClientState();
+    
+    // Закрываем модалку подтверждения и показываем главный экран
+    closeConfirmExitModal();
+    showScreen(entryScreen);
+    
+    // Сбрасываем флаг выхода через некоторое время
     setTimeout(() => {
-        const resultsContainer = document.querySelector('#resultsScreen #resultsText');
-        if (resultsContainer) {
-            resultsContainer.innerHTML = `
-                <span class="results-yes">
-                    <span class="results-count-yes">0</span> Yes
-                </span>
-                <span class="results-no">
-                    <span class="results-count-no">0</span> No
-                </span>
-            `;
-        }
-    }, 100);
+        isExitingRoom = false;
+    }, 1000);
+    
+    console.log('[EXIT] Выход из комнаты завершен');
 });
 
  // Закрытие модалки Confirm Exit при клике на темный фон (overlay)
@@ -437,26 +529,24 @@ socket.on('connect', () => {
 });
 
 socket.on('disconnect', () => {
-    console.log('Disconnected');
+    console.log('[DISCONNECT] Соединение потеряно');
+    
+    // Выполняем полную очистку состояния при отключении
+    resetClientState();
+    
+    // Показываем уведомление и главный экран
     openInfoModal("Connection Lost", "Connection to the server was lost. Please refresh or try again.");
-
-    // Сброс состояния
     showScreen(entryScreen);
-    amIHost = false;
-    hasVoted = false;
-    if (timerInterval) clearInterval(timerInterval);
-    // ... (остальные сбросы из предыдущих шагов)
-    roomCodeInput.value = '';
-    joinRoomBtn.disabled = true;
-    modalNameInput.value = '';
-    modalConfirmBtn.disabled = true;
-    playerList.innerHTML = '';
-    roomCodeDisplay.textContent = '';
 });
 
 socket.on('connect_error', (err) => { console.error('Connection Error:', err); });
 
 socket.on('errorMessage', (message) => {
+if (shouldIgnoreServerEvents()) {
+        console.log('[ERROR] Событие игнорировано - пользователь уже вышел');
+        return;
+    }
+    
     console.error('Server Error:', message);
     openInfoModal("Error", message);
 });
@@ -513,7 +603,16 @@ socket.on('updatePlayerList', (data) => {
         console.error("[Update Player List] Некорректные данные получены от сервера.");
         return;
     }
-
+    // *** ПРОВЕРКА: Обрабатываем только если мы в игре ***
+    if (shouldIgnoreServerEvents()) {
+        console.log('[Update Player List] Событие проигнорировано - пользователь вышел');
+        return;
+    }
+    
+    if (!data || !data.players) {
+        console.error("[Update Player List] Некорректные данные получены от сервера.");
+        return;
+    }
     currentHostId = data.hostId; // Сохраняем/обновляем актуальный ID хоста
 
     updatePlayerListUI(data.players); // Вызываем функцию для отрисовки списка в UI
@@ -548,7 +647,19 @@ function updateVotingStatus(votingStatus) {
 
 // --- Сервер прислал НОВЫЙ ВОПРОС ---
 socket.on('newQuestion', (data) => {
-    console.log(`[New Question] Получен вопрос ID: ${data.questionId || 'N/A'}, Текст: ${data.questionText}`);
+        console.log(`[New Question] Получен вопрос ID: ${data.questionId || 'N/A'}, Текст: ${data.questionText}`);
+
+    // *** КЛЮЧЕВАЯ ПРОВЕРКА: Обрабатываем только если мы в игре ***
+    if (!shouldHandleGameEvent(data)) {
+        console.log('[New Question] Событие проигнорировано - не наша комната или мы вышли');
+        return;
+    }
+    
+    // Дополнительная проверка: мы должны быть НЕ на главном экране
+    if (entryScreen && entryScreen.style.display !== 'none') {
+        console.log('[New Question] Событие проигнорировано - мы на главном экране');
+        return;
+    }
 
     // Сбрасываем статус голосования
     hasVoted = false;
@@ -604,6 +715,18 @@ socket.on('newQuestion', (data) => {
 socket.on('showResults', (data) => {
     console.log('[SHOW RESULTS] Получены данные:', JSON.stringify(data));
     
+    // *** КЛЮЧЕВАЯ ПРОВЕРКА: Обрабатываем только если мы в игре ***
+    if (!shouldHandleGameEvent(data)) {
+        console.log('[SHOW RESULTS] Событие проигнорировано - не наша комната или мы вышли');
+        return;
+    }
+    
+    // Дополнительная проверка: мы должны быть НЕ на главном экране
+    if (entryScreen && entryScreen.style.display !== 'none') {
+        console.log('[SHOW RESULTS] Событие проигнорировано - мы на главном экране');
+        return;
+    }
+    
     // Отложим выполнение, чтобы дать браузеру время на обработку других событий
     setTimeout(() => {
         try {
@@ -624,10 +747,8 @@ socket.on('showResults', (data) => {
             }
         } catch (error) {
             console.error('[SHOW RESULTS ERROR]', error);
-            // Попытка восстановления
-            alert('Error displaying results. Please refresh if you see this error.');
         }
-    }, 100); // Небольшая задержка
+    }, 100);
 });
 
 socket.on('youAreHostNow', () => {
@@ -781,53 +902,45 @@ socket.on('rejoinSuccess', (data) => {
 
 // Сервер отклонил попытку реконнекта
 socket.on('rejoinFailed', (data) => {
-    /* Ожидаемый формат data:
-       { message: "Причина отказа" }
-    */
-    console.warn('Rejoin failed:', data.message);
+    console.warn('[REJOIN FAILED] Переподключение не удалось:', data.message);
+
+    // Выполняем полную очистку состояния
+    resetClientState();
 
     // Показываем ошибку пользователю
     openInfoModal("Reconnection Failed", data.message);
-    // Не закрываем автоматически, пользователь нажмет OK
-
-    // Очищаем сохраненные данные, чтобы не пытаться снова
-    try {
-        localStorage.removeItem('whoWasThat_playerId');
-        localStorage.removeItem('whoWasThat_roomCode');
-    } catch (e) { console.error("Ошибка очистки localStorage:", e); }
-
-    // После закрытия модалки ошибки (по кнопке ОК) покажем главный экран
-    // Мы не можем сделать это прямо здесь, т.к. окно открыто.
-    // Пользователь сам нажмет ОК и окажется на главном экране (т.к. другие экраны скрыты).
-    // Убедимся, что другие экраны скрыты:
-     showScreen(null); // Скрыть все игровые экраны
-     entryScreen.style.display = 'flex'; // Показать только экран входа под модалкой
-
+    
+    // Показываем главный экран под модалкой
+    showScreen(entryScreen);
 });
 
 // --- Сервер сообщил, что игра окончена ---
 socket.on('gameOver', (data) => {
-    console.log('[Game Over Event] Игра окончена:', data.message);
+        if (shouldIgnoreServerEvents()) {
+        console.log('[GAME OVER] Событие игнорировано - пользователь уже вышел');
+        return;
+    }
+    console.log('[GAME OVER] Игра окончена:', data.message);
 
-    // Останавливаем клиентский таймер, если он был активен
+    // Останавливаем клиентский таймер
     if (timerInterval) {
         clearInterval(timerInterval);
-        timerInterval = null; // Сбрасываем ссылку на таймер
-        console.log('[Game Over Event] Клиентский таймер остановлен.');
+        timerInterval = null;
     }
 
-    // Открываем модальное окно Game Over с сообщением от сервера
+    // Открываем модальное окно Game Over
     openGameOverModal(data.message || "The game has ended.");
 
-    // --- ОЧИСТКА LOCALSTORAGE ПРИ КОНЦЕ ИГРЫ ---
+    // Выполняем полную очистку состояния, КРОМЕ показа модального окна
+    // Очищаем localStorage
     try {
         localStorage.removeItem('whoWasThat_playerId');
         localStorage.removeItem('whoWasThat_roomCode');
-        console.log('[Game Over Event] Данные сессии удалены из localStorage.');
+        localStorage.removeItem('whoWasThat_playerName');
+        console.log('[GAME OVER] Данные сессии удалены из localStorage.');
     } catch (e) {
-        console.error("[Game Over Event] Ошибка очистки localStorage:", e);
+        console.error("[GAME OVER] Ошибка очистки localStorage:", e);
     }
-    // --- КОНЕЦ ОЧИСТКИ ---
 
     // Сбрасываем состояние клиента
     amIHost = false;
@@ -835,27 +948,28 @@ socket.on('gameOver', (data) => {
     currentRoomCode = '';
     hasVoted = false;
 
-    exitRoomBtn.style.display = 'none'; // <<< Скрываем кнопку выхода
-
-    // Явно скрываем кнопки, которые видны только в игре/лобби
-    startGameBtn.style.display = 'none';
-    nextQuestionBtn.style.display = 'none';
+    // Скрываем все кнопки игры
+    if (exitRoomBtn) exitRoomBtn.style.display = 'none';
+    if (startGameBtn) startGameBtn.style.display = 'none';
+    if (nextQuestionBtn) nextQuestionBtn.style.display = 'none';
     if (showResultsBtn) showResultsBtn.style.display = 'none';
-    voteYesBtn.disabled = false; // Сброс кнопок голосования на всякий случай
-    voteNoBtn.disabled = false;
+    
+    // Сбрасываем кнопки голосования
+    if (voteYesBtn) voteYesBtn.disabled = false;
+    if (voteNoBtn) voteNoBtn.disabled = false;
 
-    // Сбрасываем состояние элементов ввода на главном экране
-    roomCodeInput.value = '';
-    joinRoomBtn.disabled = true;
-    modalNameInput.value = '';
-    modalConfirmBtn.disabled = true;
+    // Сбрасываем состояние элементов ввода
+    if (roomCodeInput) roomCodeInput.value = '';
+    if (joinRoomBtn) joinRoomBtn.disabled = true;
+    if (modalNameInput) modalNameInput.value = '';
+    if (modalConfirmBtn) modalConfirmBtn.disabled = true;
 
     // Очищаем элементы предыдущей игры
-    playerList.innerHTML = '';
-    roomCodeDisplay.textContent = '';
-    questionNumberDisplay.textContent = '#?';
-    questionText.textContent = '';
-    resultsText.textContent = 'YES: 0, NO: 0';
+    if (playerList) playerList.innerHTML = '';
+    if (roomCodeDisplay) roomCodeDisplay.textContent = '';
+    if (questionNumberDisplay) questionNumberDisplay.textContent = '#?';
+    if (questionText) questionText.textContent = '';
+    
     const questionReminder = resultsScreen.querySelector('.question-reminder');
     if (questionReminder) questionReminder.textContent = '';
 
@@ -1018,29 +1132,36 @@ function attemptRejoin() {
     try {
         const storedPlayerId = localStorage.getItem('whoWasThat_playerId');
         const storedRoomCode = localStorage.getItem('whoWasThat_roomCode');
-        const storedPlayerName = localStorage.getItem('whoWasThat_playerName'); // Достаем имя
+        const storedPlayerName = localStorage.getItem('whoWasThat_playerName');
 
         if (storedPlayerId && storedRoomCode) {
-            console.log(`Found session data in localStorage. Attempting rejoin: playerId=${storedPlayerId}, roomCode=${storedRoomCode}, name=${storedPlayerName}`);
+            console.log(`[REJOIN] Найдены данные сессии. Попытка переподключения: playerId=${storedPlayerId}, roomCode=${storedRoomCode}, name=${storedPlayerName}`);
+            
             // Показываем "Reconnecting..." ТОЛЬКО если сокет УЖЕ подключен
             if (socket.connected) {
                  openInfoModal("Reconnecting...", `Attempting to rejoin room ${storedRoomCode}...`);
             } else {
-                console.log("Socket not connected yet, waiting for 'connect' event after rejoin attempt.");
+                console.log("[REJOIN] Сокет еще не подключен, ждем события 'connect'.");
             }
 
             // Отправляем событие на сервер с именем игрока
             socket.emit('rejoinAttempt', {
                 playerId: storedPlayerId,
                 roomCode: storedRoomCode,
-                playerName: storedPlayerName // Добавляем имя для повторного входа
+                playerName: storedPlayerName
             });
         } else {
-            console.log('No session data found in localStorage. Showing entry screen.');
+            console.log('[REJOIN] Данные сессии не найдены в localStorage. Показываем экран входа.');
+            
+            // Убеждаемся, что состояние чистое
+            resetClientState();
             showScreen(entryScreen);
         }
     } catch (e) {
-        console.error('Error reading from localStorage during rejoin attempt:', e);
+        console.error('[REJOIN] Ошибка при попытке переподключения:', e);
+        
+        // При ошибке делаем полную очистку и показываем экран входа
+        resetClientState();
         showScreen(entryScreen);
     }
 }
