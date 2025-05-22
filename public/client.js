@@ -356,6 +356,20 @@ confirmExitBtn.addEventListener('click', () => {
 
     closeConfirmExitModal(); // Закрываем модалку подтверждения
     showScreen(entryScreen); // Показываем экран входа
+
+    setTimeout(() => {
+        const resultsContainer = document.querySelector('#resultsScreen #resultsText');
+        if (resultsContainer) {
+            resultsContainer.innerHTML = `
+                <span class="results-yes">
+                    <span class="results-count-yes">0</span> Yes
+                </span>
+                <span class="results-no">
+                    <span class="results-count-no">0</span> No
+                </span>
+            `;
+        }
+    }, 100);
 });
 
  // Закрытие модалки Confirm Exit при клике на темный фон (overlay)
@@ -957,41 +971,45 @@ function updatePlayerListUI(players) {
 function updateResultsDOM(data) {
     console.log('[UPDATE RESULTS DOM] Начинаем обновление DOM');
     
-    // Убедимся, что данные в числовом формате
     const yesVotes = parseInt(data.yesVotes) || 0;
     const noVotes = parseInt(data.noVotes) || 0;
     
     console.log(`[UPDATE RESULTS DOM] Обработанные значения: yesVotes=${yesVotes}, noVotes=${noVotes}`);
     
-    // Прямое обновление элементов span с вопросом и результатами
-    const yesCountElement = document.querySelector('#resultsScreen .results-count-yes');
-    const noCountElement = document.querySelector('#resultsScreen .results-count-no');
+    // Всегда пересоздаем структуру результатов
+    let resultsContainer = document.querySelector('#resultsScreen #resultsText');
+    
+    if (!resultsContainer) {
+        resultsContainer = document.createElement('div');
+        resultsContainer.id = 'resultsText';
+        resultsContainer.className = 'results-container';
+        
+        const resultsScreen = document.getElementById('resultsScreen');
+        const questionReminder = resultsScreen.querySelector('.question-reminder');
+        if (questionReminder) {
+            questionReminder.parentNode.insertBefore(resultsContainer, questionReminder.nextSibling);
+        } else {
+            resultsScreen.appendChild(resultsContainer);
+        }
+    }
+    
+    // Обновляем HTML напрямую
+    resultsContainer.innerHTML = `
+        <span class="results-yes">
+            <span class="results-count-yes">${yesVotes}</span> Yes
+        </span>
+        <span class="results-no">
+            <span class="results-count-no">${noVotes}</span> No
+        </span>
+    `;
+    
+    // Обновляем вопрос
     const questionElement = document.querySelector('#resultsScreen .question-reminder');
-    
-    if (yesCountElement) {
-        yesCountElement.textContent = yesVotes.toString();
-        console.log('[UPDATE RESULTS DOM] Обновлен элемент YES:', yesCountElement.textContent);
-    } else {
-        console.error('[UPDATE RESULTS DOM] Не найден счетчик YES (.results-count-yes)');
-    }
-    
-    if (noCountElement) {
-        noCountElement.textContent = noVotes.toString();
-        console.log('[UPDATE RESULTS DOM] Обновлен элемент NO:', noCountElement.textContent);
-    } else {
-        console.error('[UPDATE RESULTS DOM] Не найден счетчик NO (.results-count-no)');
-    }
-    
     if (questionElement) {
         questionElement.textContent = `#${data.questionId || '?'} ${data.questionText || ''}`;
-        console.log('[UPDATE RESULTS DOM] Обновлен текст вопроса:', questionElement.textContent);
-    } else {
-        console.error('[UPDATE RESULTS DOM] Не найден элемент вопроса (.question-reminder)');
     }
     
-    // Сброс состояний кнопок и флагов
     hasVoted = false;
-    
     console.log('[UPDATE RESULTS DOM] DOM обновление завершено');
 }
 
